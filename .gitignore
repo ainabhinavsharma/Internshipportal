@@ -24,3 +24,9 @@ videos/
 artifacts/
 *.webm
 *.mp4
+
+# Local Credentials, Passwords and Private Seeds
+*credentials*
+local_credentials.*
+seed_admin_mentors.py
+seed_private_*.py
