@@ -867,15 +867,314 @@ def seed():
                     (course_id, day_num, json.dumps(day_data["quiz"]), published_at)
                 )
 
-            # Auto-enroll test intern into this course for instant verification
-            conn.execute("DELETE FROM course_enrollments WHERE intern_id=? AND course_id=?", (intern_id, course_id))
-            conn.execute(
-                """
-                INSERT INTO course_enrollments (intern_id, course_id, enrolled_at, last_accessed_at, current_day)
-                VALUES (?, ?, ?, ?, 1)
-                """,
-                (intern_id, course_id, published_at, published_at)
-            )
+            # 5. Seed Lifecycle Interns (Covering all stages of the intern lifecycle)
+            post_row = conn.execute("SELECT id FROM posts WHERE company_id=? AND title=?", (company_id, post_title)).fetchone()
+            aivara_post_id = post_row["id"] if post_row else None
+            
+            lifecycle_accounts = [
+                {
+                    "stage": "Applied / Under Review",
+                    "name": "Aarav Sharma",
+                    "email": "applied.intern@example.com",
+                    "phone": "+91 9876543210",
+                    "city": "New Delhi",
+                    "college": "Delhi Technological University",
+                    "course": "B.Tech CSE",
+                    "semester": "6",
+                    "year_of_passing": "2027",
+                    "domain": "Data Analyst",
+                    "app_status": "Under Review",
+                    "mentor_note": "Application received. Reviewing resume, portfolio, and screening test.",
+                    "enrollment": None,
+                    "attendance": None,
+                    "job_app": None
+                },
+                {
+                    "stage": "On Hold",
+                    "name": "Priya Patel",
+                    "email": "onhold.intern@example.com",
+                    "phone": "+91 9876543211",
+                    "city": "Pilani",
+                    "college": "BITS Pilani",
+                    "course": "B.E. Computer Science",
+                    "semester": "8",
+                    "year_of_passing": "2026",
+                    "domain": "Data Analyst",
+                    "app_status": "On Hold",
+                    "mentor_note": "Application on hold pending next cohort capacity allocation window.",
+                    "enrollment": None,
+                    "attendance": None,
+                    "job_app": None
+                },
+                {
+                    "stage": "Selected (Deposit Required)",
+                    "name": "Rohan Verma",
+                    "email": "selected.intern@example.com",
+                    "phone": "+91 9876543212",
+                    "city": "Roorkee",
+                    "college": "IIT Roorkee",
+                    "course": "B.Tech",
+                    "semester": "6",
+                    "year_of_passing": "2027",
+                    "domain": "Data Analyst",
+                    "app_status": "Selected",
+                    "mentor_note": "Selected for Data Analytics track! Please pay refundable commitment deposit to confirm seat.",
+                    "enrollment": None,
+                    "attendance": None,
+                    "job_app": None
+                },
+                {
+                    "stage": "Enrolled (Verification Pending)",
+                    "name": "Sneha Kulkarni",
+                    "email": "enrolled.intern@example.com",
+                    "phone": "+91 9876543213",
+                    "city": "Pune",
+                    "college": "COEP Pune",
+                    "course": "B.Tech IT",
+                    "semester": "8",
+                    "year_of_passing": "2026",
+                    "domain": "Data Analyst",
+                    "app_status": "Enrolled",
+                    "mentor_note": "Payment proof uploaded; pending admin banking verification.",
+                    "enrollment": {
+                        "payment_status": "Pending Verification",
+                        "joining_date": (now + timedelta(days=5)).strftime("%Y-%m-%d"),
+                        "batch_label": "DA-Spring-2026-Batch",
+                        "payment_screenshot": "uploads/sample_proof.jpg"
+                    },
+                    "attendance": None,
+                    "job_app": None
+                },
+                {
+                    "stage": "Accepted (Active Live Intern)",
+                    "name": "Vikram Malhotra",
+                    "email": "accepted.intern@example.com",
+                    "phone": "+91 9876543214",
+                    "city": "Tiruchirappalli",
+                    "college": "NIT Trichy",
+                    "course": "B.Tech",
+                    "semester": "6",
+                    "year_of_passing": "2027",
+                    "domain": "Data Analyst",
+                    "app_status": "Accepted",
+                    "mentor_note": "Verified & Accepted. Welcome to AivaraTech InfoMatics Data Analytics team!",
+                    "enrollment": {
+                        "payment_status": "Verified",
+                        "joining_date": (now - timedelta(days=10)).strftime("%Y-%m-%d"),
+                        "batch_label": "DA-Alpha-2026",
+                        "payment_screenshot": "uploads/verified_payment.jpg"
+                    },
+                    "attendance": {
+                        "cur_mins": 420,  # 7.0 hours
+                        "prev_mins": 660  # 11.0 hours (Met target)
+                    },
+                    "job_app": None
+                },
+                {
+                    "stage": "Rejected (With Reapply & Paid Options)",
+                    "name": "Ananya Roy",
+                    "email": "rejected.intern@example.com",
+                    "phone": "+91 9876543215",
+                    "city": "Kolkata",
+                    "college": "Jadavpur University",
+                    "course": "B.Sc Computer Science",
+                    "semester": "4",
+                    "year_of_passing": "2028",
+                    "domain": "Data Analyst",
+                    "app_status": "Rejected",
+                    "mentor_note": "Thank you for applying. At this stage, candidates with more advanced SQL/Python experience were prioritized. You may reapply in 18 days or join our Paid Guaranteed Placement Track.",
+                    "rejected_at": (now - timedelta(days=12)).strftime("%Y-%m-%d %H:%M:%S"),
+                    "enrollment": None,
+                    "attendance": None,
+                    "job_app": None
+                },
+                {
+                    "stage": "Paid-Enrolled (Direct Placement Track)",
+                    "name": "Kabir Mehta",
+                    "email": "paidenrolled.intern@example.com",
+                    "phone": "+91 9876543216",
+                    "city": "Pune",
+                    "college": "Symbiosis Institute",
+                    "course": "BCA / MCA",
+                    "semester": "6",
+                    "year_of_passing": "2027",
+                    "domain": "Data Analyst",
+                    "app_status": "Paid-Enrolled",
+                    "mentor_note": "Enrolled in Paid Direct Track. Career mentor assigned.",
+                    "enrollment": {
+                        "payment_status": "Verified",
+                        "joining_date": (now - timedelta(days=2)).strftime("%Y-%m-%d"),
+                        "batch_label": "Paid-Guaranteed-Placement-Batch-A",
+                        "payment_screenshot": "uploads/paid_track_receipt.jpg"
+                    },
+                    "attendance": {
+                        "cur_mins": 300,
+                        "prev_mins": 0
+                    },
+                    "job_app": None
+                },
+                {
+                    "stage": "Job Board Hired (__JOB_ONLY__)",
+                    "name": "Neha Gupta",
+                    "email": "jobhired.intern@example.com",
+                    "phone": "+91 9876543217",
+                    "city": "Vellore",
+                    "college": "VIT Vellore",
+                    "course": "B.Tech CSE",
+                    "semester": "8",
+                    "year_of_passing": "2026",
+                    "domain": "Data Analyst",
+                    "app_status": None,  # No standard portal application
+                    "mentor_note": None,
+                    "enrollment": None,
+                    "attendance": None,
+                    "job_app": {
+                        "post_id": aivara_post_id,
+                        "status": "Hired",
+                        "decision_note": "Congratulations! Selected for Data Analytics Intern position at AivaraTech InfoMatics."
+                    }
+                }
+            ]
+
+            from app import get_week_bounds
+            week_start, week_end = get_week_bounds(now.date())
+            ws_str = week_start.strftime("%Y-%m-%d")
+            we_str = week_end.strftime("%Y-%m-%d")
+            
+            prev_ws_dt, prev_we_dt = get_week_bounds(week_start - timedelta(days=2))
+            prev_ws_str = prev_ws_dt.strftime("%Y-%m-%d")
+            prev_we_str = prev_we_dt.strftime("%Y-%m-%d")
+
+            print("\nSeeding Lifecycle Intern Accounts:")
+            for acc in lifecycle_accounts:
+                em = acc["email"]
+                nm = acc["name"]
+                
+                # 1. Create intern account
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO intern_accounts (
+                        name, email, phone, city, college, course, semester,
+                        year_of_passing, domain, password_hash, password_set, is_active
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)
+                    """,
+                    (nm, em, acc["phone"], acc["city"], acc["college"], acc["course"], acc["semester"], acc["year_of_passing"], acc["domain"], p)
+                )
+                conn.execute(
+                    """
+                    UPDATE intern_accounts SET 
+                        name=?, phone=?, city=?, college=?, course=?, semester=?,
+                        year_of_passing=?, domain=?, password_hash=?, password_set=1, is_active=1
+                    WHERE email=?
+                    """,
+                    (nm, acc["phone"], acc["city"], acc["college"], acc["course"], acc["semester"], acc["year_of_passing"], acc["domain"], p, em)
+                )
+                acct_row = conn.execute("SELECT id FROM intern_accounts WHERE email=?", (em,)).fetchone()
+                acc_id = acct_row["id"]
+
+                # 2. Application (if applicable)
+                if acc["app_status"]:
+                    rej_at = acc.get("rejected_at")
+                    conn.execute("DELETE FROM applications WHERE email=?", (em,))
+                    conn.execute(
+                        """
+                        INSERT INTO applications (
+                            name, email, phone, city, college, course, semester,
+                            year_of_passing, domain, why_join, status, mentor_note,
+                            reviewed_at, rejected_at, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            nm, em, acc["phone"], acc["city"], acc["college"], acc["course"],
+                            acc["semester"], acc["year_of_passing"], acc["domain"],
+                            "Passionate about applying data analytics to drive business decisions.",
+                            acc["app_status"], acc["mentor_note"],
+                            published_at, rej_at, published_at, published_at
+                        )
+                    )
+                    app_row = conn.execute("SELECT id FROM applications WHERE email=?", (em,)).fetchone()
+                    app_id = app_row["id"]
+                    conn.execute("UPDATE intern_accounts SET application_id=? WHERE id=?", (app_id, acc_id))
+                else:
+                    conn.execute("DELETE FROM applications WHERE email=?", (em,))
+                    app_id = None
+
+                # 3. Enrollment row (if applicable)
+                if acc["enrollment"]:
+                    e_info = acc["enrollment"]
+                    conn.execute("DELETE FROM enrollments WHERE email=?", (em,))
+                    conn.execute(
+                        """
+                        INSERT INTO enrollments (
+                            application_id, timestamp, name, email, phone,
+                            city, college, course, semester, year_of_passing, domain,
+                            joining_date, batch_label, payment_screenshot, payment_status,
+                            created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            app_id, published_at, nm, em, acc["phone"],
+                            acc["city"], acc["college"], acc["course"], acc["semester"],
+                            acc["year_of_passing"], acc["domain"], e_info["joining_date"],
+                            e_info["batch_label"], e_info["payment_screenshot"],
+                            e_info["payment_status"], published_at, published_at
+                        )
+                    )
+
+                # 4. Attendance (if applicable)
+                if acc["attendance"]:
+                    att = acc["attendance"]
+                    conn.execute("DELETE FROM attendance WHERE intern_id=?", (acc_id,))
+                    # Current week
+                    if att.get("cur_mins", 0) > 0:
+                        conn.execute(
+                            "INSERT INTO attendance (intern_id, week_start, week_end, total_minutes, updated_at) VALUES (?, ?, ?, ?, ?)",
+                            (acc_id, ws_str, we_str, att["cur_mins"], published_at)
+                        )
+                    # Previous week
+                    if att.get("prev_mins", 0) > 0:
+                        conn.execute(
+                            "INSERT INTO attendance (intern_id, week_start, week_end, total_minutes, updated_at) VALUES (?, ?, ?, ?, ?)",
+                            (acc_id, prev_ws_str, prev_we_str, att["prev_mins"], published_at)
+                        )
+
+                # 5. Course enrollment for active intern
+                if acc["app_status"] in ("Accepted", "Paid-Enrolled"):
+                    conn.execute("DELETE FROM course_enrollments WHERE intern_id=? AND course_id=?", (acc_id, course_id))
+                    cur_d = 3 if acc["app_status"] == "Accepted" else 1
+                    conn.execute(
+                        """
+                        INSERT INTO course_enrollments (intern_id, course_id, enrolled_at, last_accessed_at, current_day)
+                        VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (acc_id, course_id, published_at, published_at, cur_d)
+                    )
+
+                # 6. Job application (if applicable)
+                if acc["job_app"] and aivara_post_id:
+                    ja = acc["job_app"]
+                    conn.execute("DELETE FROM post_applications WHERE intern_id=? AND post_id=?", (acc_id, aivara_post_id))
+                    cur_ja = conn.execute(
+                        """
+                        INSERT INTO post_applications (
+                            post_id, intern_id, comment, status, created_at
+                        ) VALUES (?, ?, 'Eager to contribute my analytical skills at AivaraTech InfoMatics.', ?, ?)
+                        """,
+                        (aivara_post_id, acc_id, ja["status"], published_at)
+                    )
+                    ja_id = cur_ja.lastrowid
+                    # Also create pending deposit prompt
+                    conn.execute("DELETE FROM post_hire_deposits WHERE post_application_id=?", (ja_id,))
+                    conn.execute(
+                        """
+                        INSERT INTO post_hire_deposits (
+                            post_application_id, intern_id, post_id, amount, status, created_at
+                        ) VALUES (?, ?, ?, 499, 'pending', ?)
+                        """,
+                        (ja_id, acc_id, aivara_post_id, published_at)
+                    )
+
+                print(f" • [{acc['stage']}] {nm} -> {em}")
 
             conn.commit()
             print("==========================================================")
@@ -887,7 +1186,7 @@ def seed():
             print("   - Chapters: 7 structured daily modules")
             print("   - Subtopics: 21 comprehensive lesson briefs with prompt seeds")
             print("   - Quizzes: 7 daily assessments (35 questions total)")
-            print(f"   - Test Intern ({intern_id}) pre-enrolled into Day 1")
+            print("   - All 8 Lifecycle Stage Interns Seeded with Password123")
             print("==========================================================")
 
 if __name__ == "__main__":
