@@ -302,6 +302,21 @@ hr{border:none; border-top:1px solid var(--border); margin:20px 0}
 .b-violet{color:var(--violet);  background:var(--violet-soft)}
 .b-muted{color:var(--tx-muted); background:var(--white-soft)}
 
+/* ---- Overview Action Cards (Enrolled/Accepted Interns) ---- */
+.overview-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  margin: 24px 0;
+  align-items: stretch;
+}
+@media (max-width: 900px) {
+  .overview-cards-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+}
+
 /* ---- Overview hero: progress-first ---- */
 .hero-row{display:grid; grid-template-columns:1.4fr 1fr; gap:20px; margin-bottom:20px}
 .hero-progress{background:linear-gradient(150deg,var(--bg-surface),var(--bg-inset));

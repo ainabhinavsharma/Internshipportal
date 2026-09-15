@@ -100,91 +100,6 @@
           <div class="ns-soft" id="nsSoft"></div>
         </div>
 
-        <!-- OVERVIEW QUICK-ACCESS CARDS GRID (Below CTA Banner) -->
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; margin: 20px 0;" id="overviewCardsGrid">
-          
-          <!-- Card 1: Guided Learning & Course Progress — progress-first per the
-               approved mockup: the completion ring leads, copy follows. Both
-               #ovCoursePct and #ovCourseProgressFill are preserved; the fill is
-               now the ring itself and is driven by its --pct custom property. -->
-          <div class="hero-progress" style="display:flex;flex-direction:column;justify-content:space-between">
-            <div>
-              <div class="hp-top">
-                <span class="hp-course">Current course</span>
-                <span class="badge b-violet" id="ovCourseStatusBadge">Active Learning</span>
-              </div>
-              <div class="hp-body">
-                <div class="ring ring-sm" id="ovCourseProgressFill" style="--pct:0">
-                  <div class="ring-txt"><b id="ovCoursePct">0%</b><span>Complete</span></div>
-                </div>
-                <div class="hp-detail">
-                  <h3 style="font-size:15px;margin-bottom:6px" id="ovCourseTitle">Guided Learning Workspace</h3>
-                  <p class="t-sm t-muted" id="ovCourseDesc">Access your enrolled courses, AI tutoring lessons, and subtopic quizzes.</p>
-                </div>
-              </div>
-            </div>
-            <a href="/courses" id="ovCourseBtn" class="btn btn-ai btn-sm mt-16">
-              <span>Continue Learning →</span>
-            </a>
-          </div>
-
-          <!-- Card 2: Micro-Tasks & Coins Rewards -->
-          <div class="glass-card" style="display: flex; flex-direction: column; justify-content: space-between; margin-bottom: 0;">
-            <div>
-              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-                <div style="width: 38px; height: 38px; border-radius: 10px; background: rgba(226, 185, 111, 0.15); border: 1px solid rgba(226, 185, 111, 0.3); display: flex; align-items: center; justify-content: center; color: var(--gold); font-size: 16px;">
-                  <i class="fas fa-coins"></i>
-                </div>
-                <span class="badge badge-gold" id="ovCoinsVal">0 Coins</span>
-              </div>
-              <h3 style="color: #fff; font-size: 15px; font-weight: 800; margin-bottom: 6px;">Micro-Tasks & Earn Rewards</h3>
-              <p style="color: var(--tx-muted); font-size: 12px; margin-bottom: 14px; line-height: 1.5;">Complete real-world tasks, earn coins, and unlock course discounts.</p>
-              
-              <div style="display: flex; gap: 12px; margin-bottom: 14px;">
-                <div style="flex: 1; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; padding: 8px; text-align: center;">
-                  <span style="font-size: 16px; font-weight: 800; color: #fff; display: block;" id="ovTasksDoneCount">0</span>
-                  <span style="font-size: 10px; color: var(--tx-muted);">Tasks Approved</span>
-                </div>
-                <div style="flex: 1; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; padding: 8px; text-align: center;">
-                  <span style="font-size: 16px; font-weight: 800; color: var(--gold); display: block;" id="ovCoinsEarnedCount">0</span>
-                  <span style="font-size: 10px; color: var(--tx-muted);">Total Coins</span>
-                </div>
-              </div>
-            </div>
-            <a href="/tasks" class="btn-tutor" style="background: linear-gradient(135deg, var(--gold), var(--gold-deep)); color: #000; font-size: 13px; padding: 10px 16px; margin-top: 8px; text-decoration: none;">
-              <span>View Tasks & Rewards →</span>
-            </a>
-          </div>
-
-          <!-- Card 3: Weekly Attendance & 10-Hour Target -->
-          <div class="glass-card" style="display: flex; flex-direction: column; justify-content: space-between; margin-bottom: 0;">
-            <div>
-              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-                <div style="width: 38px; height: 38px; border-radius: 10px; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); display: flex; align-items: center; justify-content: center; color: var(--green); font-size: 16px;">
-                  <i class="fas fa-clock"></i>
-                </div>
-                <span class="badge badge-green" id="ovAttStatusBadge"><span class="ping-dot"></span><span id="ovAttBadgeText">Live Tracking</span></span>
-              </div>
-              <h3 style="color: #fff; font-size: 15px; font-weight: 800; margin-bottom: 6px;">Weekly Attendance (10h Target)</h3>
-              <p style="color: var(--tx-muted); font-size: 12px; margin-bottom: 14px; line-height: 1.5;">10 hours/week logged-in target required for internship stipend & certificate.</p>
-              
-              <div style="margin-bottom: 14px;">
-                <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--tx-muted); margin-bottom: 4px;">
-                  <span>This Week Logged</span>
-                  <span id="ovAttHoursText" style="color: var(--green); font-weight: 700;">0.0 / 10.0 hrs</span>
-                </div>
-                <div style="height: 6px; background: rgba(255,255,255,0.08); border-radius: 999px; overflow: hidden;">
-                  <div id="ovAttProgressFill" style="height: 100%; width: 0%; background: linear-gradient(90deg, var(--green), var(--blue)); transition: width 0.4s ease;"></div>
-                </div>
-              </div>
-            </div>
-            <button id="ovAttCardBtn" data-act-click="switchTab" data-arg-click='["cohorts"]' class="btn-tutor" style="background: transparent; border: 1px solid var(--border); color: #fff; font-size: 13px; padding: 10px 16px; margin-top: 8px;">
-              <span>View Attendance Log →</span>
-            </button>
-          </div>
-
-        </div>
-
         <!-- Step bar -->
         <div class="step-bar hidden" id="overviewStepBar"></div>
 
@@ -322,6 +237,90 @@
 
         <!-- ACCEPTED: attendance + enrollment details -->
         <div id="ovAccepted" class="hidden">
+          <!-- OVERVIEW QUICK-ACCESS CARDS GRID (Enrolled / Accepted) -->
+          <div class="overview-cards-grid" id="overviewCardsGrid">
+            
+            <!-- Card 1: Guided Learning & Course Progress -->
+            <div class="glass-card" style="display:flex;flex-direction:column;justify-content:space-between;margin-bottom:0;min-height:270px;">
+              <div>
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+                  <div style="width:38px;height:38px;border-radius:10px;background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.3);display:flex;align-items:center;justify-content:center;color:#818cf8;font-size:16px;">
+                    <i class="fas fa-graduation-cap"></i>
+                  </div>
+                  <span class="badge b-violet" id="ovCourseStatusBadge">Active Learning</span>
+                </div>
+                <h3 style="color:#fff;font-size:15px;font-weight:800;margin-bottom:6px;" id="ovCourseTitle">Guided Learning Workspace</h3>
+                <p style="color:var(--tx-muted);font-size:12px;margin-bottom:14px;line-height:1.5;" id="ovCourseDesc">Access your enrolled courses, AI tutoring lessons, and subtopic quizzes.</p>
+                <div style="display:flex;align-items:center;gap:14px;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:8px;padding:8px 12px;margin-bottom:14px;">
+                  <div class="ring ring-sm" id="ovCourseProgressFill" style="--pct:0;width:52px;height:52px;flex-shrink:0;">
+                    <div class="ring-txt"><b id="ovCoursePct" style="font-size:13px;">0%</b></div>
+                  </div>
+                  <div>
+                    <span style="font-size:12.5px;font-weight:700;color:#fff;display:block;">Course Progress</span>
+                    <span style="font-size:10.5px;color:var(--tx-muted);">Track lessons &amp; quizzes</span>
+                  </div>
+                </div>
+              </div>
+              <a href="/courses" id="ovCourseBtn" class="btn-tutor" style="background:linear-gradient(135deg,var(--violet),#3b82f6);color:#fff;font-size:13px;padding:10px 16px;margin-top:8px;text-decoration:none;text-align:center;">
+                <span>Continue Learning →</span>
+              </a>
+            </div>
+
+            <!-- Card 2: Micro-Tasks & Coins Rewards -->
+            <div class="glass-card" style="display:flex;flex-direction:column;justify-content:space-between;margin-bottom:0;min-height:270px;">
+              <div>
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+                  <div style="width:38px;height:38px;border-radius:10px;background:rgba(226,185,111,0.15);border:1px solid rgba(226,185,111,0.3);display:flex;align-items:center;justify-content:center;color:var(--gold);font-size:16px;">
+                    <i class="fas fa-coins"></i>
+                  </div>
+                  <span class="badge badge-gold" id="ovCoinsVal">0 Coins</span>
+                </div>
+                <h3 style="color:#fff;font-size:15px;font-weight:800;margin-bottom:6px;">Micro-Tasks &amp; Earn Rewards</h3>
+                <p style="color:var(--tx-muted);font-size:12px;margin-bottom:14px;line-height:1.5;">Complete real-world tasks, earn coins, and unlock course discounts.</p>
+                <div style="display:flex;gap:12px;margin-bottom:14px;">
+                  <div style="flex:1;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:8px;padding:8px;text-align:center;">
+                    <span style="font-size:16px;font-weight:800;color:#fff;display:block;" id="ovTasksDoneCount">0</span>
+                    <span style="font-size:10px;color:var(--tx-muted);">Tasks Approved</span>
+                  </div>
+                  <div style="flex:1;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:8px;padding:8px;text-align:center;">
+                    <span style="font-size:16px;font-weight:800;color:var(--gold);display:block;" id="ovCoinsEarnedCount">0</span>
+                    <span style="font-size:10px;color:var(--tx-muted);">Total Coins</span>
+                  </div>
+                </div>
+              </div>
+              <a href="/tasks" class="btn-tutor" style="background:linear-gradient(135deg,var(--gold),var(--gold-deep));color:#000;font-size:13px;padding:10px 16px;margin-top:8px;text-decoration:none;text-align:center;">
+                <span>View Tasks &amp; Rewards →</span>
+              </a>
+            </div>
+
+            <!-- Card 3: Weekly Attendance & 10-Hour Target -->
+            <div class="glass-card" style="display:flex;flex-direction:column;justify-content:space-between;margin-bottom:0;min-height:270px;">
+              <div>
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+                  <div style="width:38px;height:38px;border-radius:10px;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);display:flex;align-items:center;justify-content:center;color:var(--green);font-size:16px;">
+                    <i class="fas fa-clock"></i>
+                  </div>
+                  <span class="badge badge-green" id="ovAttStatusBadge"><span class="ping-dot"></span><span id="ovAttBadgeText">Live Tracking</span></span>
+                </div>
+                <h3 style="color:#fff;font-size:15px;font-weight:800;margin-bottom:6px;">Weekly Attendance (10h Target)</h3>
+                <p style="color:var(--tx-muted);font-size:12px;margin-bottom:14px;line-height:1.5;">10 hours/week logged-in target required for internship stipend &amp; certificate.</p>
+                <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;">
+                  <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--tx-muted);margin-bottom:6px;">
+                    <span>This Week Logged</span>
+                    <span id="ovAttHoursText" style="color:var(--green);font-weight:700;">0.0 / 10.0 hrs</span>
+                  </div>
+                  <div style="height:6px;background:rgba(255,255,255,0.08);border-radius:999px;overflow:hidden;">
+                    <div id="ovAttProgressFill" style="height:100%;width:0%;background:linear-gradient(90deg,var(--green),var(--blue));transition:width 0.4s ease;"></div>
+                  </div>
+                </div>
+              </div>
+              <button id="ovAttCardBtn" data-act-click="switchTab" data-arg-click='["cohorts"]' class="btn-tutor" style="background:transparent;border:1px solid var(--border);color:#fff;font-size:13px;padding:10px 16px;margin-top:8px;text-align:center;cursor:pointer;">
+                <span>View Attendance Log →</span>
+              </button>
+            </div>
+
+          </div>
+
           <div class="dash-grid">
             <div class="glass-card">
               <h3 style="color:#fff;font-size:15px;font-weight:800;margin-bottom:14px;"><i class="fas fa-id-card" style="color:var(--gold);margin-right:8px;"></i>Enrollment Details</h3>
@@ -689,6 +688,23 @@
   function badgeClass(s){const m={'Apply Pending':'badge-muted','Under Review':'badge-blue','On Hold':'badge-amber','Selected':'badge-gold','Selected - Pending Certifications':'badge-green','Pending-Certifications':'badge-gold','Shortlisted':'badge-blue','Hired':'badge-green','Applied':'badge-muted','Enrollment Pending':'badge-amber','Enrolled':'badge-blue','Accepted':'badge-green','Rejected':'badge-red','Paid-Enrolled':'badge-blue'};return m[s]||'badge-muted';}
 
   /* ════ SIDEBAR / TABS ════ */
+  const TAB_TITLES = {
+    overview: 'Overview',
+    learning: 'Guided Learning Workspace',
+    courses: 'Course Catalog',
+    editprofile: 'Edit Profile',
+    password: 'Change Password',
+    applyanother: 'Apply to Another Domain',
+    myapplications: 'My Applications',
+    interview: 'Virtual Interview',
+    paid: 'Paid Program',
+    coins: 'Micro-Tasks & Rewards',
+    certificate: 'Certificate of Completion',
+    leaderboard: 'Leaderboard',
+    cohorts: 'Live Cohorts',
+    messages: 'Messages',
+    notifications: 'Notifications'
+  };
   function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open');document.getElementById('scrim').classList.toggle('active');}
   function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('scrim').classList.remove('active');}
   function switchTab(name){
@@ -1211,9 +1227,9 @@
     }
   }
 
-  function showOvBlock(id){['ovSelected','ovEnrolled','ovRejected','ovAccepted'].forEach(b=>document.getElementById(b).classList.toggle('hidden',b!==id));}
+  function showOvBlock(id){['ovSelected','ovJobDeposit','ovEnrolled','ovRejected','ovAccepted'].forEach(b=>{const el=document.getElementById(b);if(el)el.classList.toggle('hidden',b!==id);});}
   function renderOverview(){
-    updateOverviewCardsGrid();
+    if(_status==='Accepted') updateOverviewCardsGrid();
     const name=(_intern.name||'').split(' ')[0]||'there';
     const domain=_intern.domain||'';const emoji=DOMAIN_EMOJIS[domain]||'';
     const nsIcon=document.getElementById('nsIcon'),nsBadge=document.getElementById('nsBadge'),nsTitle=document.getElementById('nsTitle'),nsMsg=document.getElementById('nsMsg'),nsAction=document.getElementById('nsAction'),nsSoft=document.getElementById('nsSoft'),nsDomain=document.getElementById('nsDomain');
