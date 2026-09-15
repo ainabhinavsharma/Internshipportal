@@ -3,6 +3,9 @@ from flask import Flask, render_template, request, jsonify, send_from_directory,
 from urllib.parse import quote
 from markupsafe import Markup, escape
 import os
+import sys
+if __name__ == "__main__":
+    sys.modules["app"] = sys.modules["__main__"]
 import io
 import csv
 import re
