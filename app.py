@@ -6011,13 +6011,14 @@ def _tutor_progress_live(intern_id):
 
 @app.route("/intern/leaderboard")
 def intern_leaderboard_proxy():
-    """JSON for the portal Leaderboard tab â€” global + own-domain composite boards
+    """JSON for the portal Leaderboard tab — global + own-domain composite boards
     (UAT #11). Marks the viewer's row server-side and strips other interns' ids."""
     try:
         intern = current_intern()
         if not intern:
             return jsonify({"status": "error", "message": "Unauthorized"}), 401
-        slug = tutor_domain_slug(intern.get("domain", ""))
+        domain = intern.get("domain", "")
+        slug = DOMAIN_SLUGS.get(domain, (domain or "").lower().replace(" ", "-")) if domain else ""
         data = _tutor_leaderboard(slug)
         me = str(intern["id"])
 
@@ -6035,11 +6036,75 @@ def intern_leaderboard_proxy():
             "status": "success",
             "global": _mark(data.get("global")),
             "domain": _mark(data.get("domain")),
-            "domain_label": intern.get("domain", ""),
+            "domain_label": domain,
         })
     except Exception as e:
         log_error("intern-leaderboard", e)
         return jsonify({"status": "error", "message": "Error"}), 500
+
+
+@app.route("/intern/coins")
+def intern_coins_json():
+    """Return intern's coin balances and ledger activity."""
+    try:
+        intern = current_intern()
+        if not intern:
+            return jsonify({"status": "error", "message": "Unauthorized"}), 401
+        with get_db() as conn:
+            rows = conn.execute(
+                "SELECT event_ts, ledger_kind, delta, balance_after, reason "
+                "FROM coin_ledger_mirror WHERE intern_id = ? ORDER BY id DESC",
+                (intern["id"],)
+            ).fetchall()
+            balances = get_coin_balances(conn, intern["id"])
+        return jsonify({
+            "status": "success",
+            "balances": balances,
+            "rows": [dict(r) for r in rows],
+        })
+    except Exception as e:
+        log_error("intern-coins", e)
+        return jsonify({"status": "error", "message": "Error"}), 500
+
+
+@app.route("/intern/certificates")
+def intern_certificates_json():
+    """Return earned certificates for the logged-in intern."""
+    try:
+        intern = current_intern()
+        if not intern:
+            return jsonify({"status": "error", "message": "Unauthorized"}), 401
+        with get_db() as conn:
+            rows = conn.execute("""
+                SELECT course_id, course_title, cert_id, issued_at, url, tier
+                FROM intern_certificates
+                WHERE intern_id = ?
+                ORDER BY issued_at DESC, id DESC
+            """, (intern["id"],)).fetchall()
+            certs = []
+            for r in rows:
+                d = dict(r)
+                d["download_url"] = d.get("url") or f"/portal/certificate/{d['cert_id']}"
+                certs.append(d)
+        return jsonify({"status": "success", "certificates": certs})
+    except Exception as e:
+        log_error("intern-certificates", e)
+        return jsonify({"status": "error", "message": "Error"}), 500
+
+
+@app.route("/portal/certificate/<cert_id>")
+def portal_view_certificate(cert_id):
+    """View certificate verification page."""
+    with get_db() as conn:
+        cert_row = conn.execute("""
+            SELECT c.*, a.name, a.domain
+            FROM intern_certificates c
+            JOIN intern_accounts a ON a.id = c.intern_id
+            WHERE c.cert_id = ?
+        """, (cert_id,)).fetchone()
+    if not cert_row:
+        return render_template("cert_verify.html", cert=None, cert_id=cert_id), 404
+    return render_template("cert_verify.html", cert=dict(cert_row), cert_id=cert_id)
 
 
 @app.route("/admin/ledger")
