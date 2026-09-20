@@ -960,13 +960,17 @@ def seed():
                     "mentor_note": "Verified & Accepted. Welcome to AivaraTech InfoMatics Data Analytics team!",
                     "enrollment": {
                         "payment_status": "Verified",
-                        "joining_date": (now - timedelta(days=10)).strftime("%Y-%m-%d"),
+                        "joining_date": (now - timedelta(days=14)).strftime("%Y-%m-%d"),
                         "batch_label": "DA-Alpha-2026",
                         "payment_screenshot": "uploads/verified_payment.jpg"
                     },
                     "attendance": {
-                        "cur_mins": 420,  # 7.0 hours
-                        "prev_mins": 660  # 11.0 hours (Met target)
+                        "weeks": [
+                            {"offset_weeks": 0, "mins": 435},  # Current week (7h 15m)
+                            {"offset_weeks": 1, "mins": 690},  # Week -1 (11h 30m - Met)
+                            {"offset_weeks": 2, "mins": 615},  # Week -2 (10h 15m - Met)
+                            {"offset_weeks": 3, "mins": 480},  # Week -3 (8h 0m - Below 10h)
+                        ]
                     },
                     "job_app": None
                 },
@@ -1123,20 +1127,30 @@ def seed():
 
                 # 4. Attendance (if applicable)
                 if acc["attendance"]:
-                    att = acc["attendance"]
                     conn.execute("DELETE FROM attendance WHERE intern_id=?", (acc_id,))
-                    # Current week
-                    if att.get("cur_mins", 0) > 0:
-                        conn.execute(
-                            "INSERT INTO attendance (intern_id, week_start, week_end, total_minutes, updated_at) VALUES (?, ?, ?, ?, ?)",
-                            (acc_id, ws_str, we_str, att["cur_mins"], published_at)
-                        )
-                    # Previous week
-                    if att.get("prev_mins", 0) > 0:
-                        conn.execute(
-                            "INSERT INTO attendance (intern_id, week_start, week_end, total_minutes, updated_at) VALUES (?, ?, ?, ?, ?)",
-                            (acc_id, prev_ws_str, prev_we_str, att["prev_mins"], published_at)
-                        )
+                    weeks_list = acc["attendance"].get("weeks")
+                    if weeks_list:
+                        for w_item in weeks_list:
+                            off = w_item["offset_weeks"]
+                            w_start, w_end = get_week_bounds(now.date() - timedelta(days=7 * off))
+                            conn.execute(
+                                "INSERT INTO attendance (intern_id, week_start, week_end, total_minutes, updated_at) VALUES (?, ?, ?, ?, ?)",
+                                (acc_id, w_start.strftime("%Y-%m-%d"), w_end.strftime("%Y-%m-%d"), w_item["mins"], published_at)
+                            )
+                    else:
+                        att = acc["attendance"]
+                        # Current week
+                        if att.get("cur_mins", 0) > 0:
+                            conn.execute(
+                                "INSERT INTO attendance (intern_id, week_start, week_end, total_minutes, updated_at) VALUES (?, ?, ?, ?, ?)",
+                                (acc_id, ws_str, we_str, att["cur_mins"], published_at)
+                            )
+                        # Previous week
+                        if att.get("prev_mins", 0) > 0:
+                            conn.execute(
+                                "INSERT INTO attendance (intern_id, week_start, week_end, total_minutes, updated_at) VALUES (?, ?, ?, ?, ?)",
+                                (acc_id, prev_ws_str, prev_we_str, att["prev_mins"], published_at)
+                            )
 
                 # 5. Course enrollment for active intern
                 if acc["app_status"] in ("Accepted", "Paid-Enrolled"):

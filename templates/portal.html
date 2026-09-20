@@ -1038,6 +1038,9 @@
       _jobApps = data.job_applications || [];
       _enr     = data.enrollment;
       _courseEnrs = data.course_enrollments || [];
+      _attSummary = data.attendance_summary || null;
+      _tasksCount = data.tasks_completed_count || 0;
+      _totalCoins = data.total_coins || 0;
 
       _upiId=data.upi_id||_upiId;_upiAmount=data.upi_amount||_upiAmount;
       _paidEligible=!!data.paid_eligible;_reapplyInfo=data.reapply_info;
@@ -1548,14 +1551,19 @@
 
   function initAccepted(){
     if(_acceptedInit)return;_acceptedInit=true;
-    document.getElementById('infoName').textContent=_intern.name||'';
-    document.getElementById('infoDomain').textContent=_intern.domain||'';
-    document.getElementById('infoJoining').textContent=_joiningDateStr?fmtDate(_joiningDateStr):'—';
-    document.getElementById('infoBatch').textContent=(_enr&&_enr.batch_label)||'—';
-    document.getElementById('infoEmail').textContent=_intern.email||'';
-    if(_joiningDate){const opts={day:'numeric',month:'long',year:'numeric'};const msg=`Your classes begin on ${_joiningDate.toLocaleDateString('en-IN',opts)} at 6:00 PM. Get ready to learn!`;document.getElementById('lockedMsg').textContent=msg;document.getElementById('learnLockedMsg').textContent=msg;}
+    const nameEl = document.getElementById('infoName'); if(nameEl) nameEl.textContent=_intern.name||'—';
+    const domEl  = document.getElementById('infoDomain'); if(domEl) domEl.textContent=_intern.domain||'—';
+    const jnEl   = document.getElementById('infoJoining'); if(jnEl) jnEl.textContent=_joiningDateStr?fmtDate(_joiningDateStr):'—';
+    const btEl   = document.getElementById('infoBatch'); if(btEl) btEl.textContent=(_enr&&_enr.batch_label)||'—';
+    const emEl   = document.getElementById('infoEmail'); if(emEl) emEl.textContent=_intern.email||'—';
+    if(_joiningDate){
+      const opts={day:'numeric',month:'long',year:'numeric'};
+      const msg=`Your classes begin on ${_joiningDate.toLocaleDateString('en-IN',opts)} at 6:00 PM. Get ready to learn!`;
+      const lMsg=document.getElementById('lockedMsg'); if(lMsg) lMsg.textContent=msg;
+      const llMsg=document.getElementById('learnLockedMsg'); if(llMsg) llMsg.textContent=msg;
+    }
     _isUnlocked=checkUnlocked();
-    document.getElementById('learnLockDot').classList.toggle('hidden',_isUnlocked);
+    const lDot=document.getElementById('learnLockDot'); if(lDot) lDot.classList.toggle('hidden',_isUnlocked);
     if(_isUnlocked){onUnlock();renderTutorCard();}else{startCountdown();}
     loadAttendance();
     if(_isUnlocked&&!_pingInterval){_pingInterval=setInterval(pingAttendance,3*60*1000);}
@@ -1567,9 +1575,12 @@
       if(attData.status==='success'){
         _allWeeks=attData.weeks||[];const curWeek=_allWeeks.find(w=>w.is_current);
         updateLiveCounter(curWeek?curWeek.total_minutes:0);renderAttHistory(_allWeeks);
-        if(curWeek){const fmt=d=>{try{return new Date(d).toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});}catch(e){return d;}};document.getElementById('weekLabel').innerHTML=fmt(curWeek.week_start)+' &ndash; '+fmt(curWeek.week_end);}
+        if(curWeek){
+          const fmt=d=>{try{return new Date(d).toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});}catch(e){return d;}};
+          const wl=document.getElementById('weekLabel'); if(wl) wl.innerHTML=fmt(curWeek.week_start)+' &ndash; '+fmt(curWeek.week_end);
+        }
       }
-    }catch(e){}
+    }catch(e){console.error("loadAttendance err:", e);}
   }
   function startCountdown(){
     if(_countdownInterval)clearInterval(_countdownInterval);
@@ -1609,10 +1620,13 @@
   }
   function renderAttHistory(weeks){
     const tbody=document.getElementById('attTableBody');
+    if(!tbody)return;
     if(!weeks||!weeks.length){tbody.innerHTML='<tr><td colspan="3" style="text-align:center;color:var(--tx-muted);padding:24px;">No attendance data yet.</td></tr>';return;}
     let met=0,missed=0;
     tbody.innerHTML=weeks.map(w=>{const h=Math.floor(w.total_minutes/60),m=w.total_minutes%60;const isCur=w.is_current;if(!isCur){w.met_threshold?met++:missed++;}const pill=w.met_threshold?'<span class="status-pill met"><i class="fas fa-check"></i> Met</span>':'<span class="status-pill missed"><i class="fas fa-times"></i> Below 10h</span>';return `<tr${isCur?' class="current-week-row"':''}><td>${fmtWeekRange(w.week_start,w.week_end)}${isCur?' <span style="font-size:10px;color:var(--gold);font-weight:700;">(Current)</span>':''}</td><td><strong>${h}h ${m}m</strong><span style="color:var(--tx-muted);font-size:11px;margin-left:4px;">/ 10h goal</span></td><td>${pill}</td></tr>`;}).join('');
-    document.getElementById('summTotalWeeks').textContent=weeks.length;document.getElementById('summWeeksMet').textContent=met;document.getElementById('summWeeksMissed').textContent=missed;
+    const tw=document.getElementById('summTotalWeeks'); if(tw) tw.textContent=weeks.length;
+    const wm=document.getElementById('summWeeksMet'); if(wm) wm.textContent=met;
+    const ws=document.getElementById('summWeeksMissed'); if(ws) ws.textContent=missed;
   }
   async function pingAttendance(){try{const res=await fetch('/attendance/ping',{method:'POST',credentials:'include'});const data=await res.json();if(data.status==='success'){updateLiveCounter(data.total_minutes);}}catch(e){}}
   let _allCourseProgress = [];
