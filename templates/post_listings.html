@@ -66,24 +66,24 @@
       })();
     </script>
     <h1>{{ page_h1 or label }}</h1>
-    <p class="sub">Live {{ label|lower }} from verified companies on DBERT{% if location_page %} in {{ active_location }}{% endif %}.</p>
+    <p class="sub" style="color:#000 !important;font-size:15px;margin-top:4px;margin-bottom:18px;">Live {{ label|lower }} from verified companies on DBERT{% if location_page %} in {{ active_location }}{% endif %}.</p>
 
     <div class="filters">
-      <a href="{% if active_city_slug %}{{ base_path }}/{{ active_city_slug }}{% else %}{{ base_path }}{% endif %}" class="{{ 'on' if not active_domain else '' }}">All Domains</a>
+      <a role="button" href="{% if active_city_slug %}{{ base_path }}/{{ active_city_slug }}{% else %}{{ base_path }}{% endif %}" class="filter-btn {{ 'on' if not active_domain else '' }}">All Domains</a>
       {% for d in domains %}
         {% set d_slug = domain_slugs[d] %}
-        <a href="{% if active_city_slug %}{{ base_path }}/{{ d_slug }}/{{ active_city_slug }}{% else %}{{ base_path }}/{{ d_slug }}{% endif %}" class="{{ 'on' if active_domain == d else '' }}">{{ d }}</a>
+        <a role="button" href="{% if active_city_slug %}{{ base_path }}/{{ d_slug }}/{{ active_city_slug }}{% else %}{{ base_path }}/{{ d_slug }}{% endif %}" class="filter-btn {{ 'on' if active_domain == d else '' }}">{{ d }}</a>
       {% endfor %}
     </div>
 
     {% if active_city_slug or locations %}
     <div class="filters">
-      <a href="{% if active_domain_slug %}{{ base_path }}/{{ active_domain_slug }}{% else %}{{ base_path }}{% endif %}" class="{{ 'on' if not active_city_slug else '' }}">All Locations</a>
+      <a role="button" href="{% if active_domain_slug %}{{ base_path }}/{{ active_domain_slug }}{% else %}{{ base_path }}{% endif %}" class="filter-btn {{ 'on' if not active_city_slug else '' }}">All Locations</a>
       {% if active_city_slug %}
-        <a href="{% if active_domain_slug %}{{ base_path }}/{{ active_domain_slug }}/{{ active_city_slug }}{% else %}{{ base_path }}/{{ active_city_slug }}{% endif %}" class="on">{{ active_location }}</a>
+        <a role="button" href="{% if active_domain_slug %}{{ base_path }}/{{ active_domain_slug }}/{{ active_city_slug }}{% else %}{{ base_path }}/{{ active_city_slug }}{% endif %}" class="filter-btn on">{{ active_location }}</a>
       {% endif %}
       {% for loc in locations %}
-        <a href="{% if active_domain_slug %}{{ base_path }}/{{ active_domain_slug }}/{{ loc.slug }}{% else %}{{ base_path }}/{{ loc.slug }}{% endif %}">{{ loc.location }} ({{ loc.n }})</a>
+        <a role="button" href="{% if active_domain_slug %}{{ base_path }}/{{ active_domain_slug }}/{{ loc.slug }}{% else %}{{ base_path }}/{{ loc.slug }}{% endif %}" class="filter-btn">{{ loc.location }} ({{ loc.n }})</a>
       {% endfor %}
     </div>
     {% endif %}
