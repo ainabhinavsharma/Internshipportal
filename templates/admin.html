@@ -53,31 +53,38 @@
     <!-- ENROLLMENTS -->
     <div class="section-panel active" id="panel-enrollments">
       <div class="filter-bar">
-        <input class="filter-input" id="enrSearch" placeholder="&#128269; Search name, email, domain..." data-act-input="onSearch" data-arg-input='["enr", "$value"]'/>
-        <select class="filter-select" id="enrStatusFilter" data-act-change="loadEnrollments">
-          <option value="all">All Payments</option>
-          <option value="pending">Pending Verification</option>
-          <option value="accepted">Accepted</option>
-          <option value="rejected">Rejected</option>
-        </select>
-        <select class="filter-select sm" id="enrDomain" data-act-change="applyEnrFilters" title="Domain">
-          <option value="all">All Domains</option>
-          <option>AI Agent Development</option><option>Data Analyst</option>
-          <option>Full Stack Development</option><option>Python Automation</option>
-        </select>
-        <select class="filter-select sm" id="enrProduct" data-act-change="applyEnrFilters" title="Product">
-          <option value="all">All Products</option>
-          <option value="free_deposit">Free (&#8377;499)</option>
-          <option value="paid_program">Paid (&#8377;1,599)</option>
-        </select>
-        <span class="filter-lbl">Joining</span>
-        <input type="date" class="filter-input filter-date" id="enrFrom" data-act-change="applyEnrFilters" title="Joining from"/>
-        <input type="date" class="filter-input filter-date" id="enrTo" data-act-change="applyEnrFilters" title="Joining to"/>
-        <button class="btn-sm ghost" data-act-click="clearEnrFilters" title="Clear filters"><i class="fas fa-filter-circle-xmark"></i></button>
-        <button class="btn-sm gold" data-act-click="bulkAction" data-arg-click='["accept"]'><i class="fas fa-check"></i> Bulk Accept</button>
-        <button class="btn-sm red" data-act-click="bulkAction" data-arg-click='["reject"]'><i class="fas fa-times"></i> Bulk Reject</button>
-        <button class="btn-sm red" id="enrDelBtn" data-act-click="bulkDelete" data-arg-click='["enr"]'><i class="fas fa-trash"></i> Delete Selected (<span id="enrDelN">0</span>)</button>
-        <button class="btn-sm ghost" data-act-click="loadEnrollments"><i class="fas fa-sync"></i></button>
+        <div class="filter-controls">
+          <input class="filter-input" id="enrSearch" placeholder="&#128269; Search name, email, domain..." data-act-input="onSearch" data-arg-input='["enr", "$value"]'/>
+          <select class="filter-select" id="enrStatusFilter" data-act-change="loadEnrollments">
+            <option value="all">All Payments</option>
+            <option value="pending">Pending Verification</option>
+            <option value="accepted">Accepted</option>
+            <option value="rejected">Rejected</option>
+          </select>
+          <select class="filter-select sm" id="enrDomain" data-act-change="applyEnrFilters" title="Domain">
+            <option value="all">All Domains</option>
+            <option>AI Agent Development</option><option>Data Analyst</option>
+            <option>Full Stack Development</option><option>Python Automation</option>
+          </select>
+          <select class="filter-select sm" id="enrProduct" data-act-change="applyEnrFilters" title="Product">
+            <option value="all">All Products</option>
+            <option value="free_deposit">Free (&#8377;499)</option>
+            <option value="paid_program">Paid (&#8377;1,599)</option>
+          </select>
+          <div class="filter-date-group">
+            <span class="filter-lbl">Joining</span>
+            <input type="date" class="filter-input filter-date" id="enrFrom" data-act-change="applyEnrFilters" title="Joining from"/>
+            <span class="filter-date-sep">to</span>
+            <input type="date" class="filter-input filter-date" id="enrTo" data-act-change="applyEnrFilters" title="Joining to"/>
+          </div>
+          <button class="btn-sm ghost" data-act-click="clearEnrFilters" title="Clear filters"><i class="fas fa-filter-circle-xmark"></i></button>
+        </div>
+        <div class="filter-actions">
+          <button class="btn-sm gold" data-act-click="bulkAction" data-arg-click='["accept"]'><i class="fas fa-check"></i> Bulk Accept</button>
+          <button class="btn-sm red" data-act-click="bulkAction" data-arg-click='["reject"]'><i class="fas fa-times"></i> Bulk Reject</button>
+          <button class="btn-sm red" id="enrDelBtn" data-act-click="bulkDelete" data-arg-click='["enr"]'><i class="fas fa-trash"></i> Delete Selected (<span id="enrDelN">0</span>)</button>
+          <button class="btn-sm ghost" data-act-click="loadEnrollments" title="Refresh"><i class="fas fa-sync"></i></button>
+        </div>
       </div>
       <div class="table-wrap scrolly">
         <table>
@@ -91,40 +98,46 @@
     <!-- APPLICATIONS -->
     <div class="section-panel" id="panel-applications">
       <div class="filter-bar">
-        <input class="filter-input" id="appSearch" placeholder="&#128269; Search name, email, domain..." data-act-input="onSearch" data-arg-input='["app", "$value"]'/>
-        <select class="filter-select" id="appStatusFilter" data-act-change="loadApplications">
-          <option value="all">All Statuses</option>
-          <option value="Under Review">Under Review</option>
-          <option value="On Hold">On Hold</option>
-          <option value="Selected">Selected</option>
-          <option value="Enrolled">Enrolled</option>
-          <option value="Accepted">Accepted</option>
-          <option value="Rejected">Rejected</option>
-        </select>
-        <select class="filter-select sm" id="appDomain" data-act-change="applyAppFilters" title="Domain">
-          <option value="all">All Domains</option>
-          <option>AI Agent Development</option><option>Data Analyst</option>
-          <option>Full Stack Development</option><option>Python Automation</option>
-        </select>
-        <span class="filter-lbl">Applied</span>
-        <input type="date" class="filter-input filter-date" id="appFrom" data-act-change="applyAppFilters" title="Applied from"/>
-        <input type="date" class="filter-input filter-date" id="appTo" data-act-change="applyAppFilters" title="Applied to"/>
-        <button class="btn-sm ghost" data-act-click="clearAppFilters" title="Clear filters"><i class="fas fa-filter-circle-xmark"></i></button>
-        <button class="btn-sm ghost" data-act-click="loadApplications"><i class="fas fa-sync"></i></button>
-        <a class="btn-sm ghost" href="/admin/csv/applications" target="_blank"><i class="fas fa-download"></i> CSV</a>
-        <span class="filter-sep"></span>
-        <select class="filter-select sm" id="appBulkStatus" title="Bulk status change">
-          <option value="">Set status to…</option>
-          <option value="Under Review">Under Review</option>
-          <option value="On Hold">On Hold</option>
-          <option value="Selected">Selected</option>
-          <option value="Enrollment Pending">Enrollment Pending</option>
-          <option value="Enrolled">Enrolled</option>
-          <option value="Accepted">Accepted</option>
-          <option value="Rejected">Rejected</option>
-        </select>
-        <button class="btn-sm gold" id="appBulkStatusBtn" data-act-click="bulkUpdateStatus" disabled><i class="fas fa-check-double"></i> Apply to Selected (<span id="appBulkN">0</span>)</button>
-        <button class="btn-sm red" id="appDelBtn" data-act-click="bulkDelete" data-arg-click='["app"]'><i class="fas fa-trash"></i> Delete Selected (<span id="appDelN">0</span>)</button>
+        <div class="filter-controls">
+          <input class="filter-input" id="appSearch" placeholder="&#128269; Search name, email, domain..." data-act-input="onSearch" data-arg-input='["app", "$value"]'/>
+          <select class="filter-select" id="appStatusFilter" data-act-change="loadApplications">
+            <option value="all">All Statuses</option>
+            <option value="Under Review">Under Review</option>
+            <option value="On Hold">On Hold</option>
+            <option value="Selected">Selected</option>
+            <option value="Enrolled">Enrolled</option>
+            <option value="Accepted">Accepted</option>
+            <option value="Rejected">Rejected</option>
+          </select>
+          <select class="filter-select sm" id="appDomain" data-act-change="applyAppFilters" title="Domain">
+            <option value="all">All Domains</option>
+            <option>AI Agent Development</option><option>Data Analyst</option>
+            <option>Full Stack Development</option><option>Python Automation</option>
+          </select>
+          <div class="filter-date-group">
+            <span class="filter-lbl">Applied</span>
+            <input type="date" class="filter-input filter-date" id="appFrom" data-act-change="applyAppFilters" title="Applied from"/>
+            <span class="filter-date-sep">to</span>
+            <input type="date" class="filter-input filter-date" id="appTo" data-act-change="applyAppFilters" title="Applied to"/>
+          </div>
+          <button class="btn-sm ghost" data-act-click="clearAppFilters" title="Clear filters"><i class="fas fa-filter-circle-xmark"></i></button>
+          <button class="btn-sm ghost" data-act-click="loadApplications" title="Refresh"><i class="fas fa-sync"></i></button>
+          <a class="btn-sm ghost" href="/admin/csv/applications" target="_blank"><i class="fas fa-download"></i> CSV</a>
+        </div>
+        <div class="filter-actions">
+          <select class="filter-select sm" id="appBulkStatus" title="Bulk status change">
+            <option value="">Set status to…</option>
+            <option value="Under Review">Under Review</option>
+            <option value="On Hold">On Hold</option>
+            <option value="Selected">Selected</option>
+            <option value="Enrollment Pending">Enrollment Pending</option>
+            <option value="Enrolled">Enrolled</option>
+            <option value="Accepted">Accepted</option>
+            <option value="Rejected">Rejected</option>
+          </select>
+          <button class="btn-sm gold" id="appBulkStatusBtn" data-act-click="bulkUpdateStatus" disabled><i class="fas fa-check-double"></i> Apply to Selected (<span id="appBulkN">0</span>)</button>
+          <button class="btn-sm red" id="appDelBtn" data-act-click="bulkDelete" data-arg-click='["app"]'><i class="fas fa-trash"></i> Delete Selected (<span id="appDelN">0</span>)</button>
+        </div>
       </div>
       <div class="table-wrap scrolly">
         <table>
@@ -138,21 +151,24 @@
     <!-- ATTENDANCE -->
     <div class="section-panel" id="panel-attendance">
       <div class="filter-bar">
-        <input class="filter-input" id="attSearch" placeholder="&#128269; Search intern name or email..." data-act-input="onSearch" data-arg-input='["att", "$value"]'/>
-        <span class="filter-sep"></span>
-        <select class="filter-select sm" id="attStatus" data-act-change="applyAttFilters" title="Attendance status">
-          <option value="all">All Attendance</option>
-          <option value="met">&#10003; Met (&#8805;10h)</option>
-          <option value="below">&#9888; Below 10h</option>
-        </select>
-        <select class="filter-select sm" id="attDomain" data-act-change="applyAttFilters" title="Domain">
-          <option value="all">All Domains</option>
-          <option>AI Agent Development</option><option>Data Analyst</option>
-          <option>Full Stack Development</option><option>Python Automation</option>
-        </select>
-        <button class="btn-sm ghost" data-act-click="clearAttFilters" title="Clear filters"><i class="fas fa-filter-circle-xmark"></i></button>
-        <button class="btn-sm ghost" data-act-click="loadAttendance"><i class="fas fa-sync"></i></button>
-        <a class="btn-sm gold" href="/admin/csv/attendance" target="_blank"><i class="fas fa-file-csv"></i> Export CSV</a>
+        <div class="filter-controls">
+          <input class="filter-input" id="attSearch" placeholder="&#128269; Search intern name or email..." data-act-input="onSearch" data-arg-input='["att", "$value"]'/>
+          <select class="filter-select sm" id="attStatus" data-act-change="applyAttFilters" title="Attendance status">
+            <option value="all">All Attendance</option>
+            <option value="met">&#10003; Met (&#8805;10h)</option>
+            <option value="below">&#9888; Below 10h</option>
+          </select>
+          <select class="filter-select sm" id="attDomain" data-act-change="applyAttFilters" title="Domain">
+            <option value="all">All Domains</option>
+            <option>AI Agent Development</option><option>Data Analyst</option>
+            <option>Full Stack Development</option><option>Python Automation</option>
+          </select>
+          <button class="btn-sm ghost" data-act-click="clearAttFilters" title="Clear filters"><i class="fas fa-filter-circle-xmark"></i></button>
+        </div>
+        <div class="filter-actions">
+          <button class="btn-sm ghost" data-act-click="loadAttendance" title="Refresh"><i class="fas fa-sync"></i></button>
+          <a class="btn-sm gold" href="/admin/csv/attendance" target="_blank"><i class="fas fa-file-csv"></i> Export CSV</a>
+        </div>
       </div>
       <div class="att-summary-bar hidden" id="attBelowBanner">
         <i class="fas fa-exclamation-triangle"></i><span id="attBelowText">0 interns below 10h this week.</span>
@@ -195,26 +211,32 @@
     <!-- USERS -->
     <div class="section-panel" id="panel-users">
       <div class="filter-bar">
-        <input class="filter-input" id="userSearch" placeholder="&#128269; Search..." data-act-input="onSearch" data-arg-input='["users", "$value"]'/>
-        <span class="filter-sep"></span>
-        <select class="filter-select sm" id="uIntent" data-act-change="applyUsersFilters" title="Minimum intent score">
-          <option value="0">Intent: Any</option>
-          <option value="30">Intent &#8805; 30 (Warm)</option>
-          <option value="60">Intent &#8805; 60 (Hot)</option>
-        </select>
-        <select class="filter-select sm" id="uStatus" data-act-change="applyUsersFilters" title="Furthest status">
-          <option value="all">Any status</option>
-          <option>Under Review</option><option>On Hold</option><option>Selected</option>
-          <option>Enrolled</option><option>Accepted</option><option>Rejected</option><option>Paid-Enrolled</option>
-        </select>
-        <span class="filter-lbl">Joined</span>
-        <input type="date" class="filter-input filter-date" id="uFrom" data-act-change="applyUsersFilters" title="Joined from"/>
-        <input type="date" class="filter-input filter-date" id="uTo" data-act-change="applyUsersFilters" title="Joined to"/>
-        <button class="btn-sm ghost" data-act-click="clearUsersFilters" title="Clear filters"><i class="fas fa-filter-circle-xmark"></i></button>
-        <button class="btn-sm ghost" data-act-click="loadUsers"><i class="fas fa-sync"></i></button>
-        <a class="btn-sm ghost" href="/admin/csv/incomplete-signups" target="_blank" title="Everyone who abandoned signup mid-way, or signed up but never applied to anything"><i class="fas fa-download"></i> Incomplete Signups CSV</a>
-        <button class="btn-sm red" id="usrDelBtn" data-act-click="bulkDelete" data-arg-click='["usr"]'><i class="fas fa-trash"></i> Delete Selected (<span id="usrDelN">0</span>)</button>
-        <button class="btn-sm ghost" id="usrIvResetBtn" data-act-click="bulkResetInterviews"><i class="fas fa-rotate-left"></i> Reset Interview (Selected)</button>
+        <div class="filter-controls">
+          <input class="filter-input" id="userSearch" placeholder="&#128269; Search..." data-act-input="onSearch" data-arg-input='["users", "$value"]'/>
+          <select class="filter-select sm" id="uIntent" data-act-change="applyUsersFilters" title="Minimum intent score">
+            <option value="0">Intent: Any</option>
+            <option value="30">Intent &#8805; 30 (Warm)</option>
+            <option value="60">Intent &#8805; 60 (Hot)</option>
+          </select>
+          <select class="filter-select sm" id="uStatus" data-act-change="applyUsersFilters" title="Furthest status">
+            <option value="all">Any status</option>
+            <option>Under Review</option><option>On Hold</option><option>Selected</option>
+            <option>Enrolled</option><option>Accepted</option><option>Rejected</option><option>Paid-Enrolled</option>
+          </select>
+          <div class="filter-date-group">
+            <span class="filter-lbl">Joined</span>
+            <input type="date" class="filter-input filter-date" id="uFrom" data-act-change="applyUsersFilters" title="Joined from"/>
+            <span class="filter-date-sep">to</span>
+            <input type="date" class="filter-input filter-date" id="uTo" data-act-change="applyUsersFilters" title="Joined to"/>
+          </div>
+          <button class="btn-sm ghost" data-act-click="clearUsersFilters" title="Clear filters"><i class="fas fa-filter-circle-xmark"></i></button>
+          <button class="btn-sm ghost" data-act-click="loadUsers" title="Refresh"><i class="fas fa-sync"></i></button>
+          <a class="btn-sm ghost" href="/admin/csv/incomplete-signups" target="_blank" title="Everyone who abandoned signup mid-way, or signed up but never applied to anything"><i class="fas fa-download"></i> Incomplete Signups CSV</a>
+        </div>
+        <div class="filter-actions">
+          <button class="btn-sm red" id="usrDelBtn" data-act-click="bulkDelete" data-arg-click='["usr"]'><i class="fas fa-trash"></i> Delete Selected (<span id="usrDelN">0</span>)</button>
+          <button class="btn-sm ghost" id="usrIvResetBtn" data-act-click="bulkResetInterviews"><i class="fas fa-rotate-left"></i> Reset Interview (Selected)</button>
+        </div>
       </div>
       <div class="table-wrap scrolly">
         <table>
@@ -228,25 +250,31 @@
     <!-- DEVICES -->
     <div class="section-panel" id="panel-devices">
       <div class="filter-bar">
-        <input class="filter-input" id="devSearch" placeholder="&#128269; Search..." data-act-input="onSearch" data-arg-input='["dev", "$value"]'/>
-        <span class="filter-sep"></span>
-        <select class="filter-select sm" id="dIntent" data-act-change="applyDevFilters" title="Minimum intent score">
-          <option value="0">Intent: Any</option>
-          <option value="30">Intent &#8805; 30</option>
-          <option value="60">Intent &#8805; 60</option>
-        </select>
-        <select class="filter-select sm" id="dVisits" data-act-change="applyDevFilters" title="Minimum visits">
-          <option value="0">Visits: Any</option>
-          <option value="2">&#8805; 2 visits</option>
-          <option value="5">&#8805; 5 visits</option>
-        </select>
-        <span class="filter-lbl">Last seen</span>
-        <input type="date" class="filter-input filter-date" id="dFrom" data-act-change="applyDevFilters" title="Last seen from"/>
-        <input type="date" class="filter-input filter-date" id="dTo" data-act-change="applyDevFilters" title="Last seen to"/>
-        <button class="btn-sm ghost" data-act-click="clearDevFilters" title="Clear filters"><i class="fas fa-filter-circle-xmark"></i></button>
-        <button class="btn-sm ghost" data-act-click="loadDevices"><i class="fas fa-sync"></i></button>
-        <a class="btn-sm gold" href="/admin/csv/devices" target="_blank"><i class="fas fa-file-csv"></i> Export CSV</a>
-        <button class="btn-sm red" id="devDelBtn" data-act-click="bulkDelete" data-arg-click='["dev"]'><i class="fas fa-trash"></i> Delete Selected (<span id="devDelN">0</span>)</button>
+        <div class="filter-controls">
+          <input class="filter-input" id="devSearch" placeholder="&#128269; Search..." data-act-input="onSearch" data-arg-input='["dev", "$value"]'/>
+          <select class="filter-select sm" id="dIntent" data-act-change="applyDevFilters" title="Minimum intent score">
+            <option value="0">Intent: Any</option>
+            <option value="30">Intent &#8805; 30</option>
+            <option value="60">Intent &#8805; 60</option>
+          </select>
+          <select class="filter-select sm" id="dVisits" data-act-change="applyDevFilters" title="Minimum visits">
+            <option value="0">Visits: Any</option>
+            <option value="2">&#8805; 2 visits</option>
+            <option value="5">&#8805; 5 visits</option>
+          </select>
+          <div class="filter-date-group">
+            <span class="filter-lbl">Last seen</span>
+            <input type="date" class="filter-input filter-date" id="dFrom" data-act-change="applyDevFilters" title="Last seen from"/>
+            <span class="filter-date-sep">to</span>
+            <input type="date" class="filter-input filter-date" id="dTo" data-act-change="applyDevFilters" title="Last seen to"/>
+          </div>
+          <button class="btn-sm ghost" data-act-click="clearDevFilters" title="Clear filters"><i class="fas fa-filter-circle-xmark"></i></button>
+        </div>
+        <div class="filter-actions">
+          <button class="btn-sm ghost" data-act-click="loadDevices" title="Refresh"><i class="fas fa-sync"></i></button>
+          <a class="btn-sm gold" href="/admin/csv/devices" target="_blank"><i class="fas fa-file-csv"></i> Export CSV</a>
+          <button class="btn-sm red" id="devDelBtn" data-act-click="bulkDelete" data-arg-click='["dev"]'><i class="fas fa-trash"></i> Delete Selected (<span id="devDelN">0</span>)</button>
+        </div>
       </div>
       <div class="table-wrap scrolly">
         <table>
@@ -260,8 +288,12 @@
     <!-- SECURITY (read-only abuse log) -->
     <div class="section-panel" id="panel-security">
       <div class="filter-bar">
-        <input class="filter-input" id="secSearch" placeholder="&#128269; Search ip, route, reason, email..." data-act-input="onSearch" data-arg-input='["sec", "$value"]'/>
-        <button class="btn-sm ghost" data-act-click="loadSecurity"><i class="fas fa-sync"></i> Refresh</button>
+        <div class="filter-controls">
+          <input class="filter-input" id="secSearch" placeholder="&#128269; Search ip, route, reason, email..." data-act-input="onSearch" data-arg-input='["sec", "$value"]'/>
+        </div>
+        <div class="filter-actions">
+          <button class="btn-sm ghost" data-act-click="loadSecurity" title="Refresh"><i class="fas fa-sync"></i> Refresh</button>
+        </div>
       </div>
       <div class="table-wrap">
         <table>
