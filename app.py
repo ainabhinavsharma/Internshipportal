@@ -11342,6 +11342,228 @@ def admin_push_test():
         return jsonify({"status": "error", "message": "Error"}), 500
 
 
+@app.route("/admin/intern/edit", methods=["POST"])
+def admin_intern_edit():
+    """Allows admin to edit any field of an intern account, including direct password override."""
+    try:
+        if not require_admin():
+            return jsonify({"status": "error", "message": "Unauthorized"}), 401
+        data = request.get_json(force=True)
+        intern_id = data.get("id")
+        if not intern_id:
+            return jsonify({"status": "error", "message": "Intern ID required."}), 400
+
+        name = clean_text(data.get("name"))
+        email = clean_text(data.get("email")).lower()
+        phone = clean_text(data.get("phone"))
+        city = clean_text(data.get("city"))
+        college = clean_text(data.get("college"))
+        course = clean_text(data.get("course"))
+        domain = clean_text(data.get("domain"))
+        semester = clean_text(data.get("semester"))
+        year_of_passing = data.get("year_of_passing")
+        if year_of_passing is not None:
+            year_of_passing = clean_text(str(year_of_passing))
+        is_active = data.get("is_active")
+        if is_active is not None:
+            try:
+                is_active = int(is_active)
+            except (ValueError, TypeError):
+                is_active = 1
+        else:
+            is_active = 1
+
+        new_password = clean_text(data.get("new_password"))
+
+        if not name or not email:
+            return jsonify({"status": "error", "message": "Name and email are required."}), 400
+
+        with get_db() as conn:
+            existing = conn.execute("SELECT * FROM intern_accounts WHERE id=?", (intern_id,)).fetchone()
+            if not existing:
+                return jsonify({"status": "error", "message": "Intern not found."}), 404
+
+            old_email = (existing["email"] or "").lower()
+            if email != old_email:
+                conflict = conn.execute("SELECT id FROM intern_accounts WHERE email=? AND id!=?", (email, intern_id)).fetchone()
+                if conflict:
+                    return jsonify({"status": "error", "message": "Email already in use by another account."}), 400
+
+            update_fields = [
+                ("name", name),
+                ("email", email),
+                ("phone", phone),
+                ("city", city),
+                ("college", college),
+                ("course", course),
+                ("domain", domain),
+                ("semester", semester),
+                ("year_of_passing", year_of_passing),
+                ("is_active", is_active),
+                ("updated_at", now_str()),
+            ]
+
+            if new_password:
+                update_fields.append(("password_hash", set_password_hash(new_password)))
+                update_fields.append(("password_set", 1))
+
+            set_clause = ", ".join(f"{col}=?" for col, _ in update_fields)
+            params = [val for _, val in update_fields] + [intern_id]
+            conn.execute(f"UPDATE intern_accounts SET {set_clause} WHERE id=?", params)
+
+            # If email changed, sync related records so intern's data remains linked
+            if email != old_email:
+                conn.execute("UPDATE applications SET email=?, updated_at=? WHERE email=?", (email, now_str(), old_email))
+                conn.execute("UPDATE enrollments SET email=?, updated_at=? WHERE email=?", (email, now_str(), old_email))
+                conn.execute("UPDATE attendance SET email=?, updated_at=? WHERE email=?", (email, now_str(), old_email))
+                conn.execute("UPDATE device_profiles SET email=? WHERE email=?", (email, old_email))
+                conn.execute("UPDATE interviews SET email=? WHERE email=?", (email, old_email))
+
+            conn.commit()
+
+        return jsonify({"status": "success", "message": "Intern account updated successfully."})
+    except Exception as e:
+        log_error("admin-intern-edit", e)
+        return jsonify({"status": "error", "message": f"Error: {str(e)}"}), 500
+
+
+@app.route("/admin/enrollment/edit", methods=["POST"])
+def admin_enrollment_edit():
+    """Allows admin to edit any field of an enrollment record (dates, batch, product, amount, payment status)."""
+    try:
+        if not require_admin():
+            return jsonify({"status": "error", "message": "Unauthorized"}), 401
+        data = request.get_json(force=True)
+        enr_id = data.get("id")
+        if not enr_id:
+            return jsonify({"status": "error", "message": "Enrollment ID required."}), 400
+
+        name = clean_text(data.get("name"))
+        email = clean_text(data.get("email")).lower()
+        phone = clean_text(data.get("phone"))
+        domain = clean_text(data.get("domain"))
+        joining_date = clean_text(data.get("joining_date"))
+        batch_label = clean_text(data.get("batch_label"))
+        product = clean_text(data.get("product")) or "free_deposit"
+        amount = data.get("amount")
+        if amount is not None and amount != "":
+            try:
+                amount = int(amount)
+            except (ValueError, TypeError):
+                amount = None
+        else:
+            amount = None
+        payment_status = clean_text(data.get("payment_status")) or "Pending Verification"
+        admin_note = clean_text(data.get("admin_note")) or ""
+
+        if payment_status not in {"Pending Verification", "Accepted", "Rejected"}:
+            return jsonify({"status": "error", "message": "Invalid payment status."}), 400
+
+        with get_db() as conn:
+            existing = conn.execute("SELECT * FROM enrollments WHERE id=?", (enr_id,)).fetchone()
+            if not existing:
+                return jsonify({"status": "error", "message": "Enrollment not found."}), 404
+
+            old_payment_status = existing["payment_status"]
+
+            conn.execute("""
+                UPDATE enrollments
+                SET name=?, email=?, phone=?, domain=?, joining_date=?, batch_label=?,
+                    product=?, amount=?, payment_status=?, admin_note=?, updated_at=?
+                WHERE id=?
+            """, (name, email, phone, domain, joining_date, batch_label, product,
+                  amount, payment_status, admin_note, now_str(), enr_id))
+
+            # Sync application status if payment_status changed
+            if payment_status != old_payment_status:
+                if payment_status == "Accepted":
+                    conn.execute("UPDATE applications SET status=?, updated_at=? WHERE email=? AND domain=?",
+                                 (STATUS_ACCEPTED, now_str(), email, domain))
+                    acct = conn.execute("SELECT id, name FROM intern_accounts WHERE email=?", (email,)).fetchone()
+                    if acct:
+                        try:
+                            ensure_referral_code(conn, acct["id"], acct["name"])
+                        except Exception as e:
+                            log_error("referral-code-mint", e)
+                        try:
+                            credit_referral_commission(
+                                conn, acct["id"], amount if amount is not None else UPI_AMOUNT,
+                                "programme enrolment", ref_payment_id=f"enrollment_{enr_id}")
+                        except Exception as e:
+                            log_error("referral-commission-enrollment", e)
+                elif payment_status == "Rejected":
+                    reject_status = STATUS_PAID_ENROLLED if product == "paid_program" else STATUS_ENROLLMENT_PENDING
+                    conn.execute("UPDATE applications SET status=?, updated_at=? WHERE email=? AND domain=?",
+                                 (reject_status, now_str(), email, domain))
+
+            conn.commit()
+
+        return jsonify({"status": "success", "message": "Enrollment updated successfully."})
+    except Exception as e:
+        log_error("admin-enrollment-edit", e)
+        return jsonify({"status": "error", "message": f"Error: {str(e)}"}), 500
+
+
+@app.route("/admin/application/edit", methods=["POST"])
+def admin_application_edit():
+    """Allows admin to edit application details, status, and mentor notes."""
+    try:
+        if not require_admin():
+            return jsonify({"status": "error", "message": "Unauthorized"}), 401
+        data = request.get_json(force=True)
+        app_id = data.get("id") or data.get("application_id")
+        if not app_id:
+            return jsonify({"status": "error", "message": "Application ID required."}), 400
+
+        name = clean_text(data.get("name"))
+        email = clean_text(data.get("email")).lower()
+        phone = clean_text(data.get("phone"))
+        college = clean_text(data.get("college"))
+        domain = clean_text(data.get("domain"))
+        status = clean_text(data.get("status"))
+        mentor_note = clean_text(data.get("mentor_note") or data.get("note")) or ""
+
+        if status and status not in VALID_STATUSES:
+            return jsonify({"status": "error", "message": f"Invalid status: {status}."}), 400
+
+        with get_db() as conn:
+            existing = conn.execute("SELECT * FROM applications WHERE id=?", (app_id,)).fetchone()
+            if not existing:
+                return jsonify({"status": "error", "message": "Application not found."}), 404
+
+            name = name or existing["name"]
+            email = email or existing["email"]
+            phone = phone if phone is not None else existing["phone"]
+            college = college if college is not None else existing["college"]
+            domain = domain or existing["domain"]
+            status = status or existing["status"]
+
+            old_status = existing["status"]
+            rejected_at_val = now_str() if status == STATUS_REJECTED else existing["rejected_at"]
+
+            conn.execute("""
+                UPDATE applications
+                SET name=?, email=?, phone=?, college=?, domain=?, status=?,
+                    mentor_note=?, rejected_at=?, updated_at=?
+                WHERE id=?
+            """, (name, email, phone, college, domain, status, mentor_note,
+                  rejected_at_val, now_str(), app_id))
+
+            joining_date_for_email = None
+            if status == STATUS_ACCEPTED and old_status != STATUS_ACCEPTED:
+                joining_date_for_email = auto_assign_joining_date_on_accept(conn, existing)
+
+            conn.commit()
+
+        if status and old_status != status:
+            send_status_update_email(name, email, domain, status, mentor_note, joining_date_for_email)
+
+        return jsonify({"status": "success", "message": "Application updated successfully."})
+    except Exception as e:
+        log_error("admin-application-edit", e)
+        return jsonify({"status": "error", "message": f"Error: {str(e)}"}), 500
+
+
 @app.route("/admin/users")
 def admin_users():
     try:
@@ -11354,6 +11576,7 @@ def admin_users():
         with get_db() as conn:
             accounts = conn.execute("""
                 SELECT ia.id, ia.name, ia.email, ia.phone, ia.city, ia.college, ia.course,
+                       ia.domain, ia.semester,
                        ia.year_of_passing, ia.is_active, ia.password_set,
                        ia.tutor_completion_pct, ia.created_at,
                        COALESCE(dp.intent_score, 0) AS intent_score

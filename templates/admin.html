@@ -240,7 +240,7 @@
       </div>
       <div class="table-wrap scrolly">
         <table>
-          <thead><tr><th><input type="checkbox" id="usrAll" data-act-change="toggleAll" data-arg-change='["usrAll", "usr-row"]'/></th><th>Name</th><th>Email</th><th>Phone</th><th>College</th><th>Apps</th><th>Domains &amp; Status</th><th>Furthest</th><th>Account</th><th>Intent</th><th>Joined</th></tr></thead>
+          <thead><tr><th><input type="checkbox" id="usrAll" data-act-change="toggleAll" data-arg-change='["usrAll", "usr-row"]'/></th><th>Name</th><th>Email</th><th>Phone</th><th>College</th><th>Apps</th><th>Domains &amp; Status</th><th>Furthest</th><th>Account</th><th>Intent</th><th>Joined</th><th>Actions</th></tr></thead>
           <tbody id="usersBody"></tbody>
         </table>
       </div>
@@ -375,9 +375,56 @@
     </div>
   </div>
 
-  <!-- APPLICATION UPDATE MODAL -->
+  <!-- ENROLLMENT EDIT MODAL -->
+  <div class="modal-overlay" id="enrEditModal">
+    <div class="modal-box" style="max-width:600px;">
+      <div class="modal-header">
+        <div><h2 id="enrEditTitle">Edit Enrollment</h2><p id="enrEditSub"></p></div>
+        <button class="modal-close" data-act-click="closeModal" data-arg-click='["enrEditModal"]'><i class="fas fa-times"></i></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="ee_id"/>
+        <div class="form-grid">
+          <div class="form-group"><label class="field-label" for="ee_name">Name *</label><input type="text" id="ee_name" class="field-input"/></div>
+          <div class="form-group"><label class="field-label" for="ee_email">Email *</label><input type="email" id="ee_email" class="field-input"/></div>
+          <div class="form-group"><label class="field-label" for="ee_phone">Phone</label><input type="text" id="ee_phone" class="field-input"/></div>
+          <div class="form-group"><label class="field-label" for="ee_domain">Domain</label>
+            <select id="ee_domain" class="field-select">
+              <option value="AI Agent Development">AI Agent Development</option>
+              <option value="Data Analyst">Data Analyst</option>
+              <option value="Full Stack Development">Full Stack Development</option>
+              <option value="Python Automation">Python Automation</option>
+            </select>
+          </div>
+          <div class="form-group"><label class="field-label" for="ee_joining_date">Joining Date</label><input type="date" id="ee_joining_date" class="field-input"/></div>
+          <div class="form-group"><label class="field-label" for="ee_batch_label">Batch Label</label><input type="text" id="ee_batch_label" class="field-input" placeholder="e.g. 2026-06-08 (Cohort 1)"/></div>
+          <div class="form-group"><label class="field-label" for="ee_product">Product</label>
+            <select id="ee_product" class="field-select">
+              <option value="free_deposit">Free Deposit (₹499)</option>
+              <option value="paid_program">Paid Program (₹1,599)</option>
+            </select>
+          </div>
+          <div class="form-group"><label class="field-label" for="ee_amount">Amount (₹)</label><input type="number" id="ee_amount" class="field-input"/></div>
+          <div class="form-group full"><label class="field-label" for="ee_payment_status">Payment Status</label>
+            <select id="ee_payment_status" class="field-select">
+              <option value="Pending Verification">Pending Verification</option>
+              <option value="Accepted">Accepted</option>
+              <option value="Rejected">Rejected</option>
+            </select>
+          </div>
+          <div class="form-group full"><label class="field-label" for="ee_admin_note">Admin Note</label><textarea id="ee_admin_note" class="field-textarea" rows="2" placeholder="Note..."></textarea></div>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:16px;">
+          <button class="btn-sm gold" style="flex:1;padding:12px;" data-act-click="saveEditEnr"><i class="fas fa-save"></i> Save Changes</button>
+          <button class="btn-sm ghost" style="padding:12px;" data-act-click="closeModal" data-arg-click='["enrEditModal"]'>Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- APPLICATION UPDATE / EDIT MODAL -->
   <div class="modal-overlay" id="appModal">
-    <div class="modal-box">
+    <div class="modal-box" style="max-width:600px;">
       <div class="modal-header">
         <div><h2 id="appModalTitle">Update Application</h2><p id="appModalSub"></p></div>
         <button class="modal-close" data-act-click="closeModal" data-arg-click='["appModal"]'><i class="fas fa-times"></i></button>
@@ -387,6 +434,23 @@
         <div id="appLeadBox" style="margin-bottom:14px;font-size:13px;color:var(--tx-muted);"></div>
         <span class="modal-section-label">AI Interview Assessment</span>
         <div id="appInterviewBox" style="margin-bottom:14px;font-size:13px;color:var(--tx-muted);">Loading…</div>
+
+        <span class="modal-section-label">Application Details</span>
+        <div class="form-grid" style="margin-bottom:12px;">
+          <div class="form-group"><label class="field-label" for="appEditName">Name *</label><input type="text" id="appEditName" class="field-input"/></div>
+          <div class="form-group"><label class="field-label" for="appEditEmail">Email *</label><input type="email" id="appEditEmail" class="field-input"/></div>
+          <div class="form-group"><label class="field-label" for="appEditPhone">Phone</label><input type="tel" id="appEditPhone" class="field-input"/></div>
+          <div class="form-group"><label class="field-label" for="appEditCollege">College</label><input type="text" id="appEditCollege" class="field-input"/></div>
+          <div class="form-group full"><label class="field-label" for="appEditDomain">Domain</label>
+            <select id="appEditDomain" class="field-select">
+              <option value="AI Agent Development">AI Agent Development</option>
+              <option value="Data Analyst">Data Analyst</option>
+              <option value="Full Stack Development">Full Stack Development</option>
+              <option value="Python Automation">Python Automation</option>
+            </select>
+          </div>
+        </div>
+
         <span class="modal-section-label">Update Status</span>
         <select id="appNewStatus" class="field-select" style="margin-bottom:12px;">
           <option value="">-- Keep current --</option>
@@ -403,11 +467,53 @@
           <button class="btn-sm ghost" data-act-click="resetPassword"><i class="fas fa-key"></i> Generate New Password</button>
           <span id="newPwDisplay" style="font-size:12px;color:var(--gold);font-weight:700;"></span>
         </div>
-        <span class="modal-section-label">Admin Note (optional)</span>
+        <span class="modal-section-label">Admin / Mentor Note (optional)</span>
         <textarea id="appNote" class="field-textarea" rows="2" placeholder="Message or note..."></textarea>
         <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;">
           <button class="btn-sm gold" style="flex:1;padding:12px;" data-act-click="updateApp"><i class="fas fa-save"></i> Save Changes</button>
           <button class="btn-sm red" data-act-click="deleteApp"><i class="fas fa-trash"></i> Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- INTERN ACCOUNT EDIT MODAL -->
+  <div class="modal-overlay" id="userEditModal">
+    <div class="modal-box" style="max-width:600px;">
+      <div class="modal-header">
+        <div><h2 id="userEditTitle">Edit Intern Account</h2><p id="userEditSub"></p></div>
+        <button class="modal-close" data-act-click="closeModal" data-arg-click='["userEditModal"]'><i class="fas fa-times"></i></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="ue_id"/>
+        <div class="form-grid">
+          <div class="form-group"><label class="field-label" for="ue_name">Full Name *</label><input type="text" id="ue_name" class="field-input"/></div>
+          <div class="form-group"><label class="field-label" for="ue_email">Email *</label><input type="email" id="ue_email" class="field-input"/></div>
+          <div class="form-group"><label class="field-label" for="ue_phone">Phone</label><input type="tel" id="ue_phone" class="field-input"/></div>
+          <div class="form-group"><label class="field-label" for="ue_city">City</label><input type="text" id="ue_city" class="field-input"/></div>
+          <div class="form-group"><label class="field-label" for="ue_college">College</label><input type="text" id="ue_college" class="field-input"/></div>
+          <div class="form-group"><label class="field-label" for="ue_course">Course</label><input type="text" id="ue_course" class="field-input"/></div>
+          <div class="form-group"><label class="field-label" for="ue_domain">Domain</label>
+            <select id="ue_domain" class="field-select">
+              <option value="">-- None / Select --</option>
+              <option value="AI Agent Development">AI Agent Development</option>
+              <option value="Data Analyst">Data Analyst</option>
+              <option value="Full Stack Development">Full Stack Development</option>
+              <option value="Python Automation">Python Automation</option>
+            </select>
+          </div>
+          <div class="form-group"><label class="field-label" for="ue_year">Year of Passing</label><input type="text" id="ue_year" class="field-input"/></div>
+          <div class="form-group"><label class="field-label" for="ue_active">Account Status</label>
+            <select id="ue_active" class="field-select">
+              <option value="1">Active</option>
+              <option value="0">Suspended / Inactive</option>
+            </select>
+          </div>
+          <div class="form-group full"><label class="field-label" for="ue_password">New Password (Direct Override)</label><input type="text" id="ue_password" class="field-input" placeholder="Leave blank to keep existing password"/></div>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:16px;">
+          <button class="btn-sm gold" style="flex:1;padding:12px;" data-act-click="saveEditUser"><i class="fas fa-save"></i> Save Changes</button>
+          <button class="btn-sm ghost" style="padding:12px;" data-act-click="closeModal" data-arg-click='["userEditModal"]'>Cancel</button>
         </div>
       </div>
     </div>
@@ -726,7 +832,7 @@
       <td>${r.tutor_completion_pct>0?`<span style="color:#8b5cf6;font-weight:700;font-size:12px;">${Math.round(r.tutor_completion_pct)}%</span>`:'<span style="color:var(--tx-muted);font-size:12px;">—</span>'}</td>
       <td>${payBadge(r.payment_status)}</td>
       <td>${r.payment_screenshot?`<button class="btn-sm ghost" ${actAttr('click','viewScreenshot',[r.payment_screenshot,r.name])}><i class="fas fa-image"></i></button>`:'—'}</td>
-      <td><button class="btn-sm gold" ${actAttr('click','openEnrModal',[r.id])}><i class="fas fa-eye"></i> Review</button></td>
+      <td><button class="btn-sm gold" ${actAttr('click','openEnrModal',[r.id])}><i class="fas fa-eye"></i> Review</button> <button class="btn-sm ghost" ${actAttr('click','openEditEnrModal',[r.id])}><i class="fas fa-edit"></i> Edit</button></td>
     </tr>`,
 
     app: r => `<tr>
@@ -779,6 +885,7 @@
         <td style="font-size:11px;">${acct}</td>
         <td><span style="color:${r.intent_score>=60?'var(--green)':r.intent_score>=30?'var(--amber)':'var(--tx-muted)'};">${r.intent_score||0}</span></td>
         <td style="color:var(--tx-muted);font-size:11px;">${fmtDate(r.created_at)}</td>
+        <td><button class="btn-sm ghost" ${actAttr('click','openEditUserModal',[r.id])}><i class="fas fa-edit"></i> Edit</button></td>
       </tr>`;
     },
 
@@ -816,6 +923,7 @@
     const sf = document.getElementById('enrStatusFilter')?.value||'all';
     const data = await apiFetch('/admin/enrollments?status='+sf);
     if(!data||data.status!=='success') return;
+    window.__enrById = {}; (data.enrollments||[]).forEach(e => { window.__enrById[e.id] = e; });
     pgSet('enr', data.enrollments||[]);
   }
 
@@ -842,6 +950,7 @@
   async function loadUsers(){
     const data = await apiFetch('/admin/users');
     if(!data||data.status!=='success') return;
+    window.__userById = {}; (data.users||[]).forEach(u => { window.__userById[u.id] = u; });
     pgSet('users', data.users||[]);
   }
 
@@ -982,12 +1091,18 @@
 
   function openAppModal(id, name, status, email){
     _currentAppId = id; _currentAppEmail = email;
+    const a = (window.__appById||{})[id] || {};
     document.getElementById('appModalTitle').textContent = name;
     document.getElementById('appModalSub').textContent   = 'ID: '+id+' · '+email;
-    document.getElementById('appNewStatus').value = '';
-    document.getElementById('appNote').value = '';
+    document.getElementById('appEditName').value = a.name || name || '';
+    document.getElementById('appEditEmail').value = a.email || email || '';
+    document.getElementById('appEditPhone').value = a.phone || '';
+    document.getElementById('appEditCollege').value = a.college || '';
+    if(a.domain) document.getElementById('appEditDomain').value = a.domain;
+    document.getElementById('appNewStatus').value = a.status || status || '';
+    document.getElementById('appNote').value = a.mentor_note || '';
     document.getElementById('newPwDisplay').textContent = '';
-    renderSignupIntent((window.__appById||{})[id]);
+    renderSignupIntent(a);
     loadAppInterview(email);
     openModal('appModal');
   }
@@ -1063,15 +1178,132 @@
   }
 
   async function updateApp(){
+    const name   = document.getElementById('appEditName')?.value.trim();
+    const email  = document.getElementById('appEditEmail')?.value.trim().toLowerCase();
+    const phone  = document.getElementById('appEditPhone')?.value.trim();
+    const college= document.getElementById('appEditCollege')?.value.trim();
+    const domain = document.getElementById('appEditDomain')?.value;
     const status = document.getElementById('appNewStatus').value;
     const note   = document.getElementById('appNote').value.trim();
-    if(!status&&!note){ showToast('Select a status or add a note.','red'); return; }
-    const payload = {id:_currentAppId};
+
+    if(!name || !email){ showToast('Name and email required.','red'); return; }
+
+    const payload = {id:_currentAppId, name, email, phone, college, domain};
     if(status) payload.status = status;
-    if(note)   payload.note   = note;
-    const data = await apiFetch('/admin/update-application-status','POST',payload);
-    if(data&&data.status==='success'){ showToast('Updated.','green'); closeModal('appModal'); loadApplications(); }
+    if(note)   payload.mentor_note = note;
+
+    const data = await apiFetch('/admin/application/edit','POST',payload);
+    if(data&&data.status==='success'){ showToast('Application updated.','green'); closeModal('appModal'); loadApplications(); loadStats(); }
     else showToast((data&&data.message)||'Error','red');
+  }
+
+  // ── USER / INTERN EDIT ─────────────────────────────────────────
+  function openEditUserModal(id){
+    const u = (window.__userById||{})[id];
+    if(!u) return;
+    document.getElementById('ue_id').value = u.id;
+    document.getElementById('userEditTitle').textContent = 'Edit: ' + u.name;
+    document.getElementById('userEditSub').textContent   = 'ID: ' + u.id + ' · ' + u.email;
+    document.getElementById('ue_name').value = u.name || '';
+    document.getElementById('ue_email').value = u.email || '';
+    document.getElementById('ue_phone').value = u.phone || '';
+    document.getElementById('ue_city').value = u.city || '';
+    document.getElementById('ue_college').value = u.college || '';
+    document.getElementById('ue_course').value = u.course || '';
+    document.getElementById('ue_domain').value = u.domain || '';
+    document.getElementById('ue_year').value = u.year_of_passing || '';
+    document.getElementById('ue_active').value = (u.is_active != null && u.is_active !== undefined) ? String(u.is_active) : '1';
+    document.getElementById('ue_password').value = '';
+    openModal('userEditModal');
+  }
+
+  async function saveEditUser(){
+    const id = document.getElementById('ue_id').value;
+    if(!id) return;
+    const name = document.getElementById('ue_name').value.trim();
+    const email = document.getElementById('ue_email').value.trim().toLowerCase();
+    const phone = document.getElementById('ue_phone').value.trim();
+    const city = document.getElementById('ue_city').value.trim();
+    const college = document.getElementById('ue_college').value.trim();
+    const course = document.getElementById('ue_course').value.trim();
+    const domain = document.getElementById('ue_domain').value;
+    const year_of_passing = document.getElementById('ue_year').value.trim();
+    const is_active = parseInt(document.getElementById('ue_active').value, 10);
+    const new_password = document.getElementById('ue_password').value.trim();
+
+    if(!name || !email){
+      showToast('Name and email are required.', 'red');
+      return;
+    }
+
+    const payload = {
+      id: Number(id),
+      name, email, phone, city, college, course, domain, year_of_passing, is_active
+    };
+    if(new_password){
+      payload.new_password = new_password;
+    }
+
+    const data = await apiFetch('/admin/intern/edit', 'POST', payload);
+    if(data && data.status === 'success'){
+      showToast('Intern account updated.', 'green');
+      closeModal('userEditModal');
+      loadUsers();
+    } else {
+      showToast((data && data.message) || 'Error updating intern account.', 'red');
+    }
+  }
+
+  // ── ENROLLMENT EDIT ───────────────────────────────────────────
+  function openEditEnrModal(id){
+    const e = (window.__enrById||{})[id];
+    if(!e) return;
+    document.getElementById('ee_id').value = e.id;
+    document.getElementById('enrEditTitle').textContent = 'Edit Enrollment: ' + e.name;
+    document.getElementById('enrEditSub').textContent   = 'ID: ' + e.id + ' · ' + e.email;
+    document.getElementById('ee_name').value = e.name || '';
+    document.getElementById('ee_email').value = e.email || '';
+    document.getElementById('ee_phone').value = e.phone || '';
+    if(e.domain) document.getElementById('ee_domain').value = e.domain;
+    document.getElementById('ee_joining_date').value = e.joining_date || '';
+    document.getElementById('ee_batch_label').value = e.batch_label || '';
+    document.getElementById('ee_product').value = e.product || 'free_deposit';
+    document.getElementById('ee_amount').value = e.amount != null ? e.amount : (e.product === 'paid_program' ? 1599 : 499);
+    document.getElementById('ee_payment_status').value = e.payment_status || 'Pending Verification';
+    document.getElementById('ee_admin_note').value = e.admin_note || '';
+    openModal('enrEditModal');
+  }
+
+  async function saveEditEnr(){
+    const id = document.getElementById('ee_id').value;
+    if(!id) return;
+    const name = document.getElementById('ee_name').value.trim();
+    const email = document.getElementById('ee_email').value.trim().toLowerCase();
+    const phone = document.getElementById('ee_phone').value.trim();
+    const domain = document.getElementById('ee_domain').value;
+    const joining_date = document.getElementById('ee_joining_date').value.trim();
+    const batch_label = document.getElementById('ee_batch_label').value.trim();
+    const product = document.getElementById('ee_product').value;
+    const amount = document.getElementById('ee_amount').value.trim();
+    const payment_status = document.getElementById('ee_payment_status').value;
+    const admin_note = document.getElementById('ee_admin_note').value.trim();
+
+    const payload = {
+      id: Number(id),
+      name, email, phone, domain, joining_date, batch_label, product,
+      amount: amount ? Number(amount) : null,
+      payment_status, admin_note
+    };
+
+    const data = await apiFetch('/admin/enrollment/edit', 'POST', payload);
+    if(data && data.status === 'success'){
+      showToast('Enrollment updated.', 'green');
+      closeModal('enrEditModal');
+      loadEnrollments();
+      loadStats();
+    } else {
+      showToast((data && data.message) || 'Error updating enrollment.', 'red');
+    }
   }
 
   async function deleteApp(){
