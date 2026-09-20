@@ -891,20 +891,41 @@
   let _msgLoaded=false, _msgCurrentConv=null;
   function loadMessages(force){
     if(_msgLoaded && !force) return;
-    fetch('/intern/messages',{credentials:'include'})
+    fetch('/intern/messages',{credentials:'include',headers:{'Accept':'application/json'}})
       .then(r=>r.json()).then(d=>{
         if(d.status!=='success') return;
         _msgLoaded=true;
         const box=document.getElementById('msgInbox');
         const rows=d.conversations||[];
-        box.innerHTML = rows.length
-          ? rows.map(c=>`<div class="glass-card" style="padding:14px;margin-bottom:8px;cursor:pointer;" ${actAttr('click','openMsgThread',[c.id])}>${escHtml(c.label||'Conversation')}</div>`).join('')
-          : '<p style="color:var(--tx-muted);font-size:14px;">No conversations yet.</p>';
+        const targets=d.start_targets||[];
+        let targetsHtml = '';
+        if(targets.length){
+          targetsHtml = '<div style="margin-bottom:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">'
+            + targets.map(t=>`<button class="btn-primary btn-sm" ${actAttr('click','msgStartNew',[t.type, t.id])} style="font-size:13px;"><i class="fas fa-paper-plane"></i>&nbsp; Message ${escHtml(t.label)}</button>`).join('')
+            + '</div>';
+        }
+        box.innerHTML = targetsHtml + (rows.length
+          ? rows.map(c=>`<div class="glass-card" style="padding:14px;margin-bottom:8px;cursor:pointer;" ${actAttr('click','openMsgThread',[c.id])}><div style="display:flex;justify-content:space-between;align-items:center;"><strong style="color:#fff;">${escHtml(c.label||'Conversation')}</strong><span style="font-size:11px;color:var(--tx-muted);">${escHtml(c.last_at||'')}</span></div><div style="font-size:12px;color:var(--tx-muted);margin-top:4px;">${escHtml(c.last_message||'Click to view messages')}</div></div>`).join('')
+          : '<div class="glass-card" style="padding:24px;text-align:center;"><p style="color:var(--tx-muted);font-size:14px;margin-bottom:0;">No conversations yet. Use the button above to reach out to the team.</p></div>');
       });
+  }
+  function msgStartNew(cpType, cpId){
+    fetch('/portal/messages/start',{
+      method:'POST',credentials:'include',
+      headers:{'Content-Type':'application/json','Accept':'application/json'},
+      body:JSON.stringify({counterparty_type:cpType, counterparty_id:cpId})
+    }).then(r=>r.json()).then(d=>{
+      if(d.status==='success'&&d.conversation_id){
+        loadMessages(true);
+        openMsgThread(d.conversation_id);
+      } else {
+        showToast(d.message||'Could not start conversation','amber');
+      }
+    });
   }
   function openMsgThread(convId){
     _msgCurrentConv = convId;
-    fetch('/intern/messages/'+convId,{credentials:'include'})
+    fetch('/intern/messages/'+convId,{credentials:'include',headers:{'Accept':'application/json'}})
       .then(r=>r.json()).then(d=>{
         if(d.status!=='success') return;
         document.getElementById('msgInbox').style.display='none';

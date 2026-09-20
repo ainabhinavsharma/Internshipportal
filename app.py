@@ -8768,6 +8768,9 @@ def messages_poll(conv_id):
 # JSON and are reused as-is by the tab. â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/intern/messages")
 def intern_messages_json():
+    # If accessed directly via browser address bar / link, redirect to the portal Messages tab
+    if request.headers.get("Sec-Fetch-Dest") == "document" or request.headers.get("Sec-Fetch-Mode") == "navigate":
+        return redirect("/portal#messages")
     actor = _msg_actor()
     if not actor:
         return jsonify({"status": "error", "message": "Unauthorized"}), 401
