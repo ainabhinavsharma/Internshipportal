@@ -1,0 +1,25 @@
+[Unit]
+Description=DBERT Internship Portal Gunicorn Application
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/apps/internship
+EnvironmentFile=/var/www/apps/internship/.env
+
+# Gunicorn execution with 4 workers
+ExecStart=/var/www/apps/internship/venv/bin/gunicorn \
+    --workers 4 \
+    --bind 127.0.0.1:5000 \
+    --timeout 120 \
+    --access-logfile /var/log/internship_access.log \
+    --error-logfile /var/log/internship_error.log \
+    wsgi:app
+
+Restart=always
+RestartSec=5
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target

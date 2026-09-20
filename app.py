@@ -778,6 +778,8 @@ def get_db():
     # Production: with multiple Gunicorn workers sharing one SQLite file, wait for locks
     # instead of failing instantly with "database is locked".
     conn.execute("PRAGMA busy_timeout=8000")
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA synchronous = NORMAL")
     return conn
 
 def ensure_column(conn, table, col, defn):
