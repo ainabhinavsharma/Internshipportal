@@ -1247,12 +1247,20 @@ body.doc a{color:var(--doc-accent)}
   
 
 /* leaderboard filter chips — lifted from portal.html's second inline <style> */
+body.portal #panel-leaderboard h1,
+body.portal #panel-leaderboard p,
+body.portal #panel-leaderboard .panel-head p,
+body.portal #panel-leaderboard #lbBody,
+body.portal #panel-leaderboard #lbBody .glass-card,
+body.portal #panel-leaderboard #lbBody span,
+body.portal #panel-leaderboard #lbBody strong{color:#000000 !important}
+
 body.portal .lb-toggle{display:inline-flex; align-items:center; gap:7px;
-  background:var(--bg-raised); border:1px solid var(--border); color:var(--tx-muted);
+  background:var(--bg-raised); border:1px solid var(--border); color:#000000 !important;
   font-weight:700; font-size:13px; border-radius:var(--r-pill); padding:9px 16px;
   font-family:inherit; transition:all var(--ease)}
-body.portal .lb-toggle:hover{border-color:var(--border-strong); color:var(--tx-head)}
-body.portal .lb-toggle.active{border-color:var(--tx-head); color:var(--tx-head); background:var(--gold-glow)}
+body.portal .lb-toggle:hover{border-color:var(--border-strong); color:#000000 !important}
+body.portal .lb-toggle.active{border-color:#000000; color:#000000 !important; background:var(--gold-glow)}
 
 
 /* ==========================================================================
