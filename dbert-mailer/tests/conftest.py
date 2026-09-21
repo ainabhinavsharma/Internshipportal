@@ -4,10 +4,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 os.environ["API_KEY"] = "test-api-key"
-os.environ["ALLOWED_SENDER_DOMAINS"] = "dbert.info,dbert.online"
-os.environ["DEFAULT_FROM_EMAIL"] = "careers@dbert.info"
 os.environ["DEFAULT_FROM_NAME"] = "DBERT Careers"
-os.environ["RATE_LIMIT_PER_MIN"] = "1000"  # high enough that tests don't trip it
+os.environ["DEFAULT_REPLY_TO"] = "careers@dbert.online"
 
 import pytest
 
@@ -22,7 +20,13 @@ def client():
 
 
 @pytest.fixture(autouse=True)
-def _reset_rate_window():
-    mailer_module._rate_window.clear()
+def _reset_pool():
+    mailer_module.pool._global_window.clear()
+    for s in mailer_module.pool.senders:
+        s.hourly_window.clear()
+        s.daily_window.clear()
     yield
-    mailer_module._rate_window.clear()
+    mailer_module.pool._global_window.clear()
+    for s in mailer_module.pool.senders:
+        s.hourly_window.clear()
+        s.daily_window.clear()

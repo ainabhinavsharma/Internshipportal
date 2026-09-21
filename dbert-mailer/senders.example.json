@@ -1,0 +1,50 @@
+[
+  {
+    "id": "aivara_contactus_online",
+    "email": "contactus@aivaratech.online",
+    "password": "YOUR_MAILBOX_PASSWORD",
+    "name": "DBERT Careers",
+    "server": "smtp.titan.email",
+    "port": 465,
+    "ssl": true,
+    "hourly_limit": 28,
+    "daily_limit": 280,
+    "enabled": true
+  },
+  {
+    "id": "aivara_humanresource_online",
+    "email": "humanresource@aivaratech.online",
+    "password": "YOUR_MAILBOX_PASSWORD",
+    "name": "DBERT Careers",
+    "server": "smtp.titan.email",
+    "port": 465,
+    "ssl": true,
+    "hourly_limit": 28,
+    "daily_limit": 280,
+    "enabled": true
+  },
+  {
+    "id": "aivara_support_info",
+    "email": "support@aivaratech.info",
+    "password": "YOUR_MAILBOX_PASSWORD",
+    "name": "DBERT Careers",
+    "server": "smtp.titan.email",
+    "port": 465,
+    "ssl": true,
+    "hourly_limit": 28,
+    "daily_limit": 280,
+    "enabled": true
+  },
+  {
+    "id": "aivara_hr_info",
+    "email": "hr@aivaratech.info",
+    "password": "YOUR_MAILBOX_PASSWORD",
+    "name": "DBERT Careers",
+    "server": "smtp.titan.email",
+    "port": 465,
+    "ssl": true,
+    "hourly_limit": 28,
+    "daily_limit": 280,
+    "enabled": true
+  }
+]

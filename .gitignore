@@ -5,6 +5,7 @@ _env*
 *.db*
 *.backup
 *.sqlite*
+*.zip
 __pycache__/
 *.pyc
 venv/
@@ -35,3 +36,5 @@ artifacts/
 local_credentials.*
 seed_admin_mentors.py
 seed_private_*.py
+senders.json
+*senders.json
