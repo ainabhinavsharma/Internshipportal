@@ -2768,9 +2768,11 @@ def _cpanel_api_send(msg, to_email):
     html_part = text_part = None
     for part in msg.walk():
         if part.get_content_type() == "text/html":
-            html_part = part.get_payload(decode=True).decode(part.get_content_charset() or "utf-8")
+            raw = part.get_payload(decode=True)
+            html_part = raw.decode(part.get_content_charset() or "utf-8", errors="replace") if isinstance(raw, bytes) else (raw or "")
         elif part.get_content_type() == "text/plain":
-            text_part = part.get_payload(decode=True).decode(part.get_content_charset() or "utf-8")
+            raw = part.get_payload(decode=True)
+            text_part = raw.decode(part.get_content_charset() or "utf-8", errors="replace") if isinstance(raw, bytes) else (raw or "")
     r = requests.post(
         CPANEL_EMAIL_API_URL,
         headers={"X-API-Key": CPANEL_EMAIL_API_KEY, "Content-Type": "application/json"},

@@ -1,7 +1,10 @@
 .env
+.env*
 _env
 _env*
-*.db
+*.db*
+*.backup
+*.sqlite*
 __pycache__/
 *.pyc
 venv/

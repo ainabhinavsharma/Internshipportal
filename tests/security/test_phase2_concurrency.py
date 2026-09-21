@@ -20,12 +20,14 @@ def phase2_setup(app_client):
     
     # Create test data
     with get_db() as conn:
+        conn.execute("INSERT OR IGNORE INTO companies (id, name, email) VALUES (1, 'Test Company', 'comp@test.com')")
         # Mentor slot
         conn.execute("INSERT OR REPLACE INTO mentor_availability_slots (id, mentor_staff_id, is_booked, start_time, end_time) VALUES (999, 1, 0, '2026-01-01 10:00:00', '2026-01-01 11:00:00')")
         # Cohort
         conn.execute("INSERT OR REPLACE INTO cohorts (id, title, capacity, status, company_id) VALUES (888, 'Test Cohort', 1, 'published', 1)")
         # Project submission dependencies
         conn.execute("INSERT OR IGNORE INTO courses (id, title, slug, domain, company_id) VALUES (1, 'Test Course', 'test-course', 'Test', 1)")
+        conn.execute("INSERT OR IGNORE INTO course_enrollments (id, intern_id, course_id) VALUES (1, ?, 1)", (i1,))
         conn.execute(
             "INSERT OR REPLACE INTO project_submissions (id, intern_id, course_id, status, enrollment_id, github_repo_url, project_title, project_description) VALUES (777, ?, 1, 'pending', 1, 'url', 'title', 'desc')",
             (i1,)
