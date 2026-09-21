@@ -41,13 +41,19 @@ def app_client():
         pass
 
 
-def seed_intern(db_path, email="test_intern99@test.com", password="TestPass123", name="Test Intern"):
+def seed_intern(db_path, email="test_intern99@test.com", password="TestPass123", name="Test Intern", status="Accepted"):
     os.environ["DB_FILE"] = db_path
     with get_db() as conn:
         conn.execute(
             "INSERT OR IGNORE INTO intern_accounts "
             "(name, email, password_hash, password_set, is_active) VALUES (?,?,?,1,1)",
             (name, email, set_password_hash(password))
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO applications "
+            "(name, email, phone, city, college, course, semester, year_of_passing, domain, why_join, status) "
+            "VALUES (?, ?, '9876543210', 'City', 'College', 'B.Tech', '6', '2026', 'AI Agent Development', 'Test', ?)",
+            (name, email, status)
         )
         conn.commit()
         return conn.execute("SELECT id FROM intern_accounts WHERE email=?", (email,)).fetchone()["id"]

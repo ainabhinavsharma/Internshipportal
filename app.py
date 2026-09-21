@@ -3744,23 +3744,26 @@ def admin_logout():
         return jsonify({"status": "error"}), 500
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• 
 # TUTOR SSO
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• 
 
 def _intern_payment_verified(email):
-    """T9 âš ï¸ security fix: true once admin has verified payment and the intern's
-    application is Accepted (see admin_update_enrollment_status, the only place that
-    sets STATUS_ACCEPTED -- it's the unified payment-verified terminal state for both
-    the free and paid_program enrollment tracks). This is the server-side gate for
-    minting a tutor SSO token; before this it was a front-end-only check, so any
-    logged-in intern (paid or not) could mint a real token -- the paywall bypass."""
+    """True once admin has verified payment and the intern's application is Accepted or Paid-Enrolled.
+    Unified server-side gate for tutor tokens and enrolled intern feature access."""
+    if not email:
+        return False
     with get_db() as conn:
         row = conn.execute(
-            "SELECT 1 FROM applications WHERE email=? AND status=? LIMIT 1",
-            (email, STATUS_ACCEPTED),
+            "SELECT 1 FROM applications WHERE LOWER(email)=? AND status IN (?, ?) LIMIT 1",
+            (email.strip().lower(), STATUS_ACCEPTED, STATUS_PAID_ENROLLED),
         ).fetchone()
     return row is not None
+
+
+def is_enrolled_or_accepted(email):
+    """Returns True if the intern has an application in Accepted or Paid-Enrolled status."""
+    return _intern_payment_verified(email)
 
 
 @app.route('/generate-tutor-token', methods=['POST'])
@@ -3836,6 +3839,13 @@ def course_enroll(course_id):
         if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.is_json:
             return jsonify({"status": "error", "message": "Authentication required"}), 401
         return redirect("/#signin")
+
+    if not is_enrolled_or_accepted(intern["email"]):
+        msg = "Internship enrollment required. Please confirm your seat via the ₹499 refundable deposit to unlock course learning."
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.is_json:
+            return jsonify({"status": "enrollment_required", "message": msg, "redirect": "/portal"}), 403
+        flash(msg, "warning")
+        return redirect("/portal")
         
     with get_db() as conn:
         course = conn.execute("SELECT * FROM courses WHERE id = ?", (course_id,)).fetchone()
@@ -3886,6 +3896,8 @@ def course_subtopic_detail(course_id, subtopic_id):
     intern = current_intern()
     if not intern:
         return jsonify({"status": "error", "message": "Authentication required"}), 401
+    if not is_enrolled_or_accepted(intern["email"]):
+        return jsonify({"status": "error", "message": "Internship enrollment required."}), 403
         
     with get_db() as conn:
         enrollment = conn.execute(
@@ -3937,6 +3949,8 @@ def course_subtopic_chat(course_id, subtopic_id):
     intern = current_intern()
     if not intern:
         return jsonify({"status": "error", "message": "Authentication required"}), 401
+    if not is_enrolled_or_accepted(intern["email"]):
+        return jsonify({"status": "error", "message": "Internship enrollment required."}), 403
         
     data = request.get_json(silent=True) or {}
     user_message = (data.get("message") or "").strip()
@@ -4035,6 +4049,9 @@ def course_learn_page(course_id):
     intern = current_intern()
     if not intern:
         return redirect("/#signin")
+    if not is_enrolled_or_accepted(intern["email"]):
+        flash("Please confirm your enrollment to access course learning.", "warning")
+        return redirect("/portal")
         
     with get_db() as conn:
         course = conn.execute("SELECT * FROM courses WHERE id = ?", (course_id,)).fetchone()
@@ -5182,6 +5199,8 @@ def task_submit(task_id):
     intern = current_intern()
     if not intern:
         return jsonify({"status": "error", "message": "Authentication required"}), 401
+    if not is_enrolled_or_accepted(intern["email"]):
+        return jsonify({"status": "error", "message": "Internship enrollment required to submit tasks."}), 403
 
     with get_db() as conn:
         # Enforce single-submission constraint
@@ -5498,6 +5517,8 @@ def intern_book_slot(slot_id):
     intern = current_intern()
     if not intern:
         return jsonify({"status": "error", "message": "Authentication required"}), 401
+    if not is_enrolled_or_accepted(intern["email"]):
+        return jsonify({"status": "error", "message": "Internship enrollment required to book mentor sessions."}), 403
 
     with get_db() as conn:
         if not check_mentor_pacing(intern["id"]):
@@ -6535,6 +6556,36 @@ def signup_stage1():
                  terms_accepted_at,newsletter_opt_in,signup_stage,created_at,updated_at)
                 VALUES (?,?,?,?,1,1,?,?,1,?,?)
             """, (name, email, phone, set_password_hash(password), now_str(), newsletter, now_str(), now_str()))
+
+            # Auto-initialize baseline application in STATUS_SELECTED so the intern
+            # enters the ₹499 refundable deposit enrollment funnel immediately
+            chosen_domain = clean_text(data.get("domain"))
+            if chosen_domain not in VALID_DOMAINS:
+                chosen_domain = "AI Agent Development"
+
+            existing_app = conn.execute("SELECT id FROM applications WHERE LOWER(email)=?", (email,)).fetchone()
+            if not existing_app:
+                cur_app = conn.execute("""
+                    INSERT INTO applications (
+                        name, email, phone, city, college, course, semester, year_of_passing,
+                        domain, why_join, status, source, visitor_id, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'direct_signup', ?, ?, ?)
+                """, (
+                    name, email, phone,
+                    clean_text(data.get("city")) or "Online / Remote",
+                    clean_text(data.get("college")) or "Student",
+                    clean_text(data.get("course")) or "B.Tech",
+                    clean_text(data.get("semester")) or "6",
+                    clean_text(data.get("year_of_passing")) or "2026",
+                    chosen_domain,
+                    "Enrolled via DBERT portal direct registration.",
+                    STATUS_SELECTED,
+                    visitor_id,
+                    now_str(),
+                    now_str()
+                ))
+                conn.execute("UPDATE intern_accounts SET application_id=?, domain=? WHERE email=?",
+                             (cur_app.lastrowid, chosen_domain, email))
             # Â§6.1 â€” attribute the signup to a referrer if the 30-day cookie is
             # present. Threaded through the EXISTING flow; never blocks signup.
             try:
