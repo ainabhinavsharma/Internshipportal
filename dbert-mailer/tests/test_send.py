@@ -76,7 +76,7 @@ def test_send_2xx_happy_path_ssl_port_465(client, monkeypatch):
     assert data["status"] == "sent"
     assert captured["to_addr"] == "candidate@example.com"
     assert "From: DBERT Careers <" in captured["msg_str"]
-    assert "Reply-To: careers@dbert.online" in captured["msg_str"]
+    assert f"Reply-To: {data['sender']}" in captured["msg_str"]
     assert "Subject: DBERT Internship Offer" in captured["msg_str"]
 
 
@@ -215,3 +215,55 @@ def test_rate_limit_blocks_when_pool_exhausted(client, monkeypatch):
     })
     assert r_blocked.status_code == 429
     assert r_blocked.get_json()["message"] == "all senders currently rate limited"
+
+
+def test_reply_to_defaults_to_sending_mailbox_across_rotation(client, monkeypatch):
+    captured_messages = []
+
+    class FakeSMTP_SSL:
+        def __init__(self, host, port, timeout=None, context=None): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def login(self, user, pw): pass
+        def sendmail(self, from_addr, to_addr, msg_str):
+            captured_messages.append((from_addr, msg_str))
+
+    monkeypatch.setattr(mailer_module.smtplib, "SMTP_SSL", FakeSMTP_SSL)
+    monkeypatch.setattr(mailer_module.smtplib, "SMTP", FakeSMTP_SSL)
+
+    pool_size = len(mailer_module.pool.senders)
+    for i in range(pool_size):
+        r = client.post("/send", headers={"X-API-Key": "test-api-key"}, json={
+            "to": f"applicant{i}@example.com",
+            "subject": f"Offer #{i}",
+            "html": "<p>Offer</p>",
+        })
+        assert r.status_code == 200
+        sender_email = r.get_json()["sender"]
+        from_addr, msg_str = captured_messages[-1]
+        assert from_addr == sender_email
+        assert f"Reply-To: {sender_email}" in msg_str
+
+
+def test_reply_to_explicit_override_is_honored(client, monkeypatch):
+    captured = {}
+
+    class FakeSMTP_SSL:
+        def __init__(self, host, port, timeout=None, context=None): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def login(self, user, pw): pass
+        def sendmail(self, from_addr, to_addr, msg_str):
+            captured["msg_str"] = msg_str
+
+    monkeypatch.setattr(mailer_module.smtplib, "SMTP_SSL", FakeSMTP_SSL)
+    monkeypatch.setattr(mailer_module.smtplib, "SMTP", FakeSMTP_SSL)
+
+    r = client.post("/send", headers={"X-API-Key": "test-api-key"}, json={
+        "to": "applicant@example.com",
+        "subject": "Interview Scheduling",
+        "html": "<p>Select slot</p>",
+        "reply_to": "interviews@customdomain.com",
+    })
+    assert r.status_code == 200
+    assert "Reply-To: interviews@customdomain.com" in captured["msg_str"]

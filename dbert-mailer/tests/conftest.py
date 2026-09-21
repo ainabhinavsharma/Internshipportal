@@ -5,7 +5,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 os.environ["API_KEY"] = "test-api-key"
 os.environ["DEFAULT_FROM_NAME"] = "DBERT Careers"
-os.environ["DEFAULT_REPLY_TO"] = "careers@dbert.online"
 
 import pytest
 

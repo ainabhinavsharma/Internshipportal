@@ -29,7 +29,7 @@ app = Flask(__name__)
 
 API_KEY = os.environ.get("API_KEY", "")
 DEFAULT_FROM_NAME = os.environ.get("DEFAULT_FROM_NAME", "DBERT Careers")
-DEFAULT_REPLY_TO = os.environ.get("DEFAULT_REPLY_TO", "careers@dbert.online")
+DEFAULT_REPLY_TO = os.environ.get("DEFAULT_REPLY_TO", "").strip()
 GLOBAL_RATE_LIMIT_PER_MIN = int(os.environ.get("GLOBAL_RATE_LIMIT_PER_MIN", "120"))
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -54,7 +54,7 @@ class SenderAccount:
         self.hourly_limit = int(config.get("hourly_limit", config.get("rate_limit_per_hour", 28)))
         self.daily_limit = int(config.get("daily_limit", config.get("rate_limit_per_day", 280)))
         self.enabled = bool(config.get("enabled", True))
-        self.reply_to = config.get("reply_to") or DEFAULT_REPLY_TO
+        self.reply_to = config.get("reply_to") or self.email
 
         self.hourly_window = deque()
         self.daily_window = deque()
@@ -198,12 +198,13 @@ def _valid_api_key(provided):
     return hmac.compare_digest(provided, API_KEY)
 
 
-def _build_message(to_email, subject, html, text, from_name, sender_email, reply_to):
+def _build_message(to_email, subject, html, text, from_name, sender_email, reply_to=None):
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = f"{from_name} <{sender_email}>"
     msg["To"] = to_email
-    msg["Reply-To"] = reply_to or DEFAULT_REPLY_TO
+    # Reply-To defaults to the sending mailbox itself unless explicitly overridden
+    msg["Reply-To"] = reply_to or sender_email
     msg["Date"] = formatdate(localtime=True)
     try:
         domain = sender_email.split("@")[-1]
@@ -269,7 +270,7 @@ def send():
     html = data.get("html") or ""
     text = data.get("text") or ""
     from_name = (data.get("from_name") or DEFAULT_FROM_NAME).strip()
-    reply_to = (data.get("reply_to") or DEFAULT_REPLY_TO).strip()
+    custom_reply_to = (data.get("reply_to") or "").strip()
 
     if not to_email or "@" not in to_email:
         return jsonify({"status": "error", "message": "invalid 'to'"}), 400
@@ -285,10 +286,11 @@ def send():
 
     last_err = None
     for sender in candidates:
-        msg = _build_message(to_email, subject, html, text, from_name, sender.email, reply_to)
+        effective_reply_to = custom_reply_to or sender.reply_to or sender.email
+        msg = _build_message(to_email, subject, html, text, from_name, sender.email, effective_reply_to)
         try:
             _send_via_smtp(sender, msg, to_email)
-            log.info("sent to=%s subject=%r via sender=%s", to_email, subject, sender.email)
+            log.info("sent to=%s subject=%r via sender=%s reply_to=%s", to_email, subject, sender.email, effective_reply_to)
             return jsonify({"status": "sent", "sender": sender.email}), 200
         except Exception as e:
             last_err = e

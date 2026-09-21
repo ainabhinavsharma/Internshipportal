@@ -1,6 +1,6 @@
 # dbert-mailer — Multi-Domain Email Relay (cPanel / Passenger Deploy)
 
-A lightweight standalone Flask microservice that relays emails through a rotating, rate-limited pool of SMTP accounts (Titan Email, cPanel, Gmail, etc.) while enforcing consistent **DBERT identity and branding** (Display Name: `DBERT Careers`, Reply-To: `careers@dbert.online`).
+A lightweight standalone Flask microservice that relays emails through a rotating, rate-limited pool of SMTP accounts (Titan Email, cPanel, Gmail, etc.) while enforcing consistent **DBERT identity and branding** (Display Name: `DBERT Careers`, Reply-To: defaults to the active sending mailbox so replies route back to the delivery address, e.g. `contactus@aivaratech.online`, or can be overridden per request).
 
 The portal (`internship` app on EC2, `EMAIL_PROVIDER=cpanel_api`) does all HTML rendering, open tracking, and unsubscribe generation, then POSTs the finished message here over HTTPS (port 443 — bypassing EC2 outbound port 25/587 blocks).
 
@@ -65,7 +65,7 @@ If you are hosting this on `mailer.dbert.online`:
    ```env
    API_KEY=c04e1ba5f674a53ce6b9c5e291ce2fdd91d8781c832a9bf195300dab5745e6e6
    DEFAULT_FROM_NAME=DBERT Careers
-   DEFAULT_REPLY_TO=careers@dbert.online
+   # DEFAULT_REPLY_TO is optional; defaults automatically to the active sending mailbox
    GLOBAL_RATE_LIMIT_PER_MIN=120
    ```
 5. Run `pip install -r requirements.txt` via cPanel's "Run Pip Install" button.
