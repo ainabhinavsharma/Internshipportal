@@ -7,18 +7,37 @@
     var REF_COOKIE = 'dbert_ref', DAYS = 30;
     var m = window.location.search.match(/[?&]ref=([A-Za-z0-9_-]{3,40})/);
     if (m) {
+      var code = m[1];
       var d = new Date(); d.setTime(d.getTime() + DAYS * 864e5);
-      document.cookie = REF_COOKIE + '=' + encodeURIComponent(m[1])
+      document.cookie = REF_COOKIE + '=' + encodeURIComponent(code)
         + ';expires=' + d.toUTCString() + ';path=/;SameSite=Lax';
+      try {
+        if (window.localStorage) {
+          localStorage.setItem(REF_COOKIE, code);
+          localStorage.setItem(REF_COOKIE + '_exp', d.getTime().toString());
+        }
+      } catch (lsErr) {}
       /* record the click server-side; failure must never affect the page */
       if (window.fetch) {
-        fetch('/r/click?ref=' + encodeURIComponent(m[1]), {credentials: 'same-origin'})
+        fetch('/r/click?ref=' + encodeURIComponent(code), {credentials: 'same-origin'})
           .catch(function () {});
       }
     }
     window.dbertRefCode = function () {
-      var c = document.cookie.match(/(?:^|;\s*)dbert_ref=([^;]*)/);
-      return c ? decodeURIComponent(c[1]) : '';
+      try {
+        var c = document.cookie.match(/(?:^|;\s*)dbert_ref=([^;]*)/);
+        if (c && c[1]) return decodeURIComponent(c[1]);
+      } catch (ckErr) {}
+      try {
+        if (window.localStorage) {
+          var lsExp = parseInt(localStorage.getItem(REF_COOKIE + '_exp') || '0', 10);
+          if (lsExp && Date.now() < lsExp) {
+            var lsCode = localStorage.getItem(REF_COOKIE);
+            if (lsCode) return lsCode;
+          }
+        }
+      } catch (lsErr) {}
+      return '';
     };
   } catch (e) {}
 })();

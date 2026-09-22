@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, render_template, request, redirect, flash, session
+from flask import Blueprint, jsonify, render_template, request, redirect, flash, session, Response
 from markupsafe import escape
 ambassador_bp = Blueprint('ambassador', __name__)
 
@@ -7,12 +7,19 @@ from app import (
     record_referral_click, log_error, encrypt_upi, decrypt_upi, now_str,
     ensure_referral_code, row_to_dict, get_coin_balances, AMBASSADOR_ENABLED,
     referral_link, mask_upi, get_client_ip, rate_check, RL_UPI_UPDATE,
-    log_abuse, is_valid_upi, RL_WITHDRAWAL, FERNET_KEY, debit_referral_coins
+    log_abuse, is_valid_upi, RL_WITHDRAWAL, FERNET_KEY, debit_referral_coins,
+    REFERRAL_COOKIE, REFERRAL_WINDOW_DAYS, COOKIE_SECURE
+)
+
+KNOWN_BOTS = (
+    "whatsapp", "telegrambot", "facebookexternalhit", "twitterbot",
+    "slackbot", "linkedinbot", "googlebot", "bingbot", "applebot",
+    "pinterest", "discordbot"
 )
 
 @ambassador_bp.route("/ambassador")
 def ambassador_page():
-    """Intern-facing College Ambassador tab (Â§6.6)."""
+    """Intern-facing College Ambassador tab (§6.6)."""
     if not current_intern():
         return redirect("/#signin")
     return render_template("ambassador.html")
@@ -20,17 +27,31 @@ def ambassador_page():
 
 @ambassador_bp.route("/r/click")
 def referral_click():
-    """Anonymous click beacon for /?ref=<code> (Â§6.1). Always 204 â€” a bad or
-    unknown code must never reveal whether it exists."""
+    """Anonymous click beacon for /?ref=<code> (§6.1). Always 204 — a bad or
+    unknown code must never reveal whether it exists.
+    Issues a 30-day server-side Set-Cookie header (immune to Apple Safari ITP)
+    and filters out automated crawler bots to protect funnel accuracy."""
+    resp = Response("", status=204)
     try:
         code = clean_text(request.args.get("ref"))
         if code:
-            with get_db() as conn:
-                record_referral_click(conn, code)
-                conn.commit()
+            resp.set_cookie(
+                REFERRAL_COOKIE,
+                code,
+                max_age=REFERRAL_WINDOW_DAYS * 86400,
+                path="/",
+                samesite="Lax",
+                secure=COOKIE_SECURE
+            )
+            ua = (request.headers.get("User-Agent") or "").lower()
+            is_bot = any(b in ua for b in KNOWN_BOTS)
+            if not is_bot:
+                with get_db() as conn:
+                    record_referral_click(conn, code)
+                    conn.commit()
     except Exception as e:
         log_error("referral-click", e)
-    return ("", 204)
+    return resp
 
 
 @ambassador_bp.route("/intern/ambassador")
@@ -50,14 +71,21 @@ def intern_ambassador():
             code = acct["referral_code"] or ensure_referral_code(conn, acct["id"], acct["name"])
             conn.commit()
 
-            funnel = {"clicked": 0, "signed_up": 0, "converted": 0}
+            raw_counts = {"clicked": 0, "signed_up": 0, "converted": 0}
             for r in conn.execute(
                     "SELECT status, COUNT(*) c FROM referrals WHERE referrer_intern_id=? GROUP BY status",
                     (acct["id"],)).fetchall():
-                funnel[r["status"]] = r["c"]
-            # a signup is also a click, a conversion is also a signup
-            funnel["clicked"]   += funnel["signed_up"] + funnel["converted"]
-            funnel["signed_up"] += funnel["converted"]
+                raw_counts[r["status"]] = r["c"]
+
+            total_converted = raw_counts.get("converted", 0)
+            total_signups   = raw_counts.get("signed_up", 0) + total_converted
+            total_clicks    = max(raw_counts.get("clicked", 0), total_signups)
+
+            funnel = {
+                "clicked": total_clicks,
+                "signed_up": total_signups,
+                "converted": total_converted
+            }
 
             referrals = [row_to_dict(r) for r in conn.execute(
                 "SELECT r.status, r.created_at, r.flagged, a.name AS referred_name "
@@ -110,12 +138,14 @@ def intern_ambassador_upi():
                             "retry_after": retry_after}), 429
 
         upi = clean_text((request.get_json(silent=True) or {}).get("upi_id"))
+        if upi:
+            upi = upi.strip().lower()
         if not is_valid_upi(upi):
             return jsonify({"status": "error", "message": "Enter a valid UPI id, e.g. name@bank."}), 400
 
         cipher = encrypt_upi(upi)
         if not cipher:
-            # Â§5.4 â€” refuse rather than fall back to plaintext.
+            # §5.4 — refuse rather than fall back to plaintext.
             log_error("upi-encrypt", RuntimeError("FERNET_KEY missing or invalid"))
             return jsonify({"status": "error",
                             "message": "Payouts are temporarily unavailable. Please try later."}), 503
@@ -133,7 +163,7 @@ def intern_ambassador_upi():
 
 @ambassador_bp.route("/intern/ambassador/withdraw", methods=["POST"])
 def intern_ambassador_withdraw():
-    """Request a payout. Draws ONLY on the referral ledger (Â§6.5)."""
+    """Request a payout. Draws ONLY on the referral ledger (§6.5)."""
     try:
         intern = current_intern()
         if not intern:
@@ -159,6 +189,15 @@ def intern_ambassador_withdraw():
                 return jsonify({"status": "error",
                                 "message": "Add your UPI id before requesting a withdrawal."}), 400
 
+            # Guard against double-spend / multiple active pending withdrawals
+            has_pending = conn.execute(
+                "SELECT 1 FROM ambassador_withdrawals WHERE intern_id=? AND status='pending' LIMIT 1",
+                (intern["id"],)
+            ).fetchone()
+            if has_pending:
+                return jsonify({"status": "error",
+                                "message": "You already have a withdrawal request pending review."}), 409
+
             balance = get_coin_balances(conn, intern["id"])["referral"]
             pending = conn.execute(
                 "SELECT COALESCE(SUM(amount),0) v FROM ambassador_withdrawals "
@@ -167,7 +206,7 @@ def intern_ambassador_withdraw():
             available = balance - pending
             if amount > available:
                 return jsonify({"status": "error",
-                                "message": f"You can withdraw at most â‚¹{available}."}), 400
+                                "message": f"You can withdraw at most ₹{available}."}), 400
 
             conn.execute(
                 "INSERT INTO ambassador_withdrawals (intern_id, amount, status) VALUES (?,?, 'pending')",

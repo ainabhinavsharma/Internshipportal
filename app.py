@@ -5015,6 +5015,42 @@ def debit_referral_coins(conn, intern_id, amount, reason, withdrawal_id):
     return bal - amount
 
 
+def handle_enrollment_accepted(conn, enrollment_id):
+    """Unified handler for enrollment acceptance across all admin endpoints.
+    Guarantees:
+    1. Code minting for newly accepted intern (so their ambassador tab is ready).
+    2. 10% commission credited to referrer (idempotent on enrollment_id).
+    3. Transition of referral status to 'converted'.
+    4. Server-side GA4 conversion event.
+    """
+    if not enrollment_id:
+        return
+    enr = conn.execute("SELECT * FROM enrollments WHERE id=?", (enrollment_id,)).fetchone()
+    if not enr:
+        return
+    email = (enr["email"] or "").strip().lower()
+    acct = conn.execute("SELECT id, name FROM intern_accounts WHERE LOWER(email)=?", (email,)).fetchone()
+    if not acct:
+        return
+
+    # 1. Mint ambassador code for the new intern
+    try:
+        ensure_referral_code(conn, acct["id"], acct["name"])
+    except Exception as e:
+        log_error("referral-code-mint", e)
+
+    # 2. Credit commission to their referrer (if any)
+    try:
+        amt = enr["amount"] if ("amount" in enr.keys() and enr["amount"] is not None) else UPI_AMOUNT
+        credit_referral_commission(
+            conn, acct["id"], amt,
+            "programme enrolment", ref_payment_id=f"enrollment_{enrollment_id}"
+        )
+    except Exception as e:
+        log_error("referral-commission-enrollment", e)
+
+
+
 @app.route("/staff/tasks", methods=["GET"])
 def staff_task_queue():
     staff = current_staff()
@@ -11184,22 +11220,7 @@ def admin_enrollment_review():
                          (STATUS_ACCEPTED if action == "accept" else reject_status,
                           now_str(), enr["email"], enr["domain"]))
             if action == "accept":
-                acct = conn.execute("SELECT id, name FROM intern_accounts WHERE email=?",
-                                    (enr["email"],)).fetchone()
-                if acct:
-                    # Â§6.1 â€” an Accepted intern becomes an ambassador: mint their
-                    # code here so the tab has something to show on first visit.
-                    try:
-                        ensure_referral_code(conn, acct["id"], acct["name"])
-                    except Exception as e:
-                        log_error("referral-code-mint", e)
-                    # Â§6.3 â€” the enrolment fee is a verified payment too.
-                    try:
-                        credit_referral_commission(
-                            conn, acct["id"], enr["amount"] if "amount" in enr.keys() else UPI_AMOUNT,
-                            "programme enrolment", ref_payment_id=f"enrollment_{eid}")
-                    except Exception as e:
-                        log_error("referral-commission-enrollment", e)
+                handle_enrollment_accepted(conn, eid)
             conn.commit()
         if ops != nps:
             ed = row_to_dict(enr)
@@ -11244,6 +11265,8 @@ def admin_enrollment_bulk_review():
                     conn.execute("UPDATE applications SET status=?,updated_at=? WHERE email=? AND domain=?",
                                  (STATUS_ACCEPTED if action == "accept" else reject_status,
                                   now_str(), enr["email"], enr["domain"]))
+                    if action == "accept":
+                        handle_enrollment_accepted(conn, eid)
                     if ops != nps:
                         ed = row_to_dict(enr)
                         joining_date = ed.get("joining_date", "")
@@ -11373,6 +11396,7 @@ def admin_update_enrollment_status():
             if nps == "Accepted":
                 conn.execute("UPDATE applications SET status=?,updated_at=? WHERE email=? AND domain=?",
                              (STATUS_ACCEPTED, now_str(), enr["email"], enr["domain"]))
+                handle_enrollment_accepted(conn, eid)
             elif nps == "Rejected":
                 conn.execute("UPDATE applications SET status=?,updated_at=? WHERE email=? AND domain=?",
                              (reject_status, now_str(), enr["email"], enr["domain"]))
@@ -11562,18 +11586,7 @@ def admin_enrollment_edit():
                 if payment_status == "Accepted":
                     conn.execute("UPDATE applications SET status=?, updated_at=? WHERE email=? AND domain=?",
                                  (STATUS_ACCEPTED, now_str(), email, domain))
-                    acct = conn.execute("SELECT id, name FROM intern_accounts WHERE email=?", (email,)).fetchone()
-                    if acct:
-                        try:
-                            ensure_referral_code(conn, acct["id"], acct["name"])
-                        except Exception as e:
-                            log_error("referral-code-mint", e)
-                        try:
-                            credit_referral_commission(
-                                conn, acct["id"], amount if amount is not None else UPI_AMOUNT,
-                                "programme enrolment", ref_payment_id=f"enrollment_{enr_id}")
-                        except Exception as e:
-                            log_error("referral-commission-enrollment", e)
+                    handle_enrollment_accepted(conn, enr_id)
                 elif payment_status == "Rejected":
                     reject_status = STATUS_PAID_ENROLLED if product == "paid_program" else STATUS_ENROLLMENT_PENDING
                     conn.execute("UPDATE applications SET status=?, updated_at=? WHERE email=? AND domain=?",

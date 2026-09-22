@@ -239,6 +239,16 @@
   }
 
   document.addEventListener('DOMContentLoaded', loadAmbassador);
+  // Auto-refresh metrics whenever ambassador returns to this tab
+  window.addEventListener('focus', function() {
+    loadAmbassador();
+  });
+  // Light 45-second heartbeat refresh while page is actively open
+  setInterval(function() {
+    if (document.visibilityState === 'visible') {
+      loadAmbassador();
+    }
+  }, 45000);
 </script>
 </body>
 </html>
