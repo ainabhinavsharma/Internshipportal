@@ -559,7 +559,8 @@
   function dismissBanner(){const b=document.getElementById('urgencyBanner');if(b){b.style.display='none';document.body.classList.add('banner-hidden');}setCookie('dbert_banner','1',3);}
   function initBanner(){if(getCookie('dbert_banner')==='1'){const b=document.getElementById('urgencyBanner');if(b){b.style.display='none';document.body.classList.add('banner-hidden');}}}
   function toggleMenu(){document.getElementById('navLinks').classList.toggle('open');}
-  function scrollToId(id){const el=document.getElementById(id);if(el)el.scrollIntoView({behavior:'smooth',block:'start'});}
+  function closeMenu(){const n=document.getElementById('navLinks');if(n)n.classList.remove('open');}
+  function scrollToId(id){closeMenu();const el=document.getElementById(id);if(el)el.scrollIntoView({behavior:'smooth',block:'start'});}
   function toggleFAQ(btn){const item=btn.closest('.faq-item'),isOpen=item.classList.contains('open');document.querySelectorAll('.faq-item.open').forEach(i=>i.classList.remove('open'));if(!isOpen)item.classList.add('open');}
 
   let _tt=null;
@@ -576,6 +577,7 @@
     }catch(e){}
   }
   function showAuthOverlay(tab,domain){
+    closeMenu();
     const ov=document.getElementById('authOverlay');
     ov.classList.add('active');
     ov.scrollTop=0;
@@ -829,6 +831,7 @@
 
   document.addEventListener('DOMContentLoaded',()=>{
     initNav();
+    document.getElementById('navLinks')?.addEventListener('click', e=>{ if(e.target.closest('a')) closeMenu(); });
     document.getElementById('si_password')?.addEventListener('keydown',e=>{if(e.key==='Enter')doSignin();});
     document.getElementById('si_email')?.addEventListener('keydown',e=>{if(e.key==='Enter')doEmailCheck();});
     document.getElementById('si_confirmpw')?.addEventListener('keydown',e=>{if(e.key==='Enter')doSetPassword();});

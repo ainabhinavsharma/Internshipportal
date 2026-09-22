@@ -105,7 +105,7 @@
 
         <!-- SELECTED: payment block -->
         <div class="glass-card hidden" id="ovSelected" style="margin-bottom:20px; max-width:640px;">
-          <h3 style="color:#fff;font-size:16px;font-weight:800;margin-bottom:16px;"><i class="fas fa-lock" style="color:var(--green);margin-right:8px;"></i>Secure Your Seat &mdash; &#8377;499 Refundable Deposit</h3>
+          <h3 style="color:var(--tx-head);font-size:16px;font-weight:800;margin-bottom:16px;"><i class="fas fa-lock" style="color:var(--green);margin-right:8px;"></i>Secure Your Seat &mdash; &#8377;499 Refundable Deposit</h3>
           <ul class="perks">
             <li class="perks-title"><i class="fas fa-gift"></i> What you get when you enroll</li>
             <li><i class="fas fa-bolt"></i><span><strong>Offer letter within 2 hours</strong> of enrollment &mdash; delivered straight to your inbox.</span></li>
@@ -159,7 +159,7 @@
              legacy ovSelected card above -- no joining-date calendar here, since the
              company already sets its own start date). -->
         <div class="glass-card hidden" id="ovJobDeposit" style="margin-bottom:20px; max-width:640px;">
-          <h3 style="color:#fff;font-size:16px;font-weight:800;margin-bottom:16px;"><i class="fas fa-lock" style="color:var(--green);margin-right:8px;"></i>Secure Your Role &mdash; &#8377;499 Refundable Deposit</h3>
+          <h3 style="color:var(--tx-head);font-size:16px;font-weight:800;margin-bottom:16px;"><i class="fas fa-lock" style="color:var(--green);margin-right:8px;"></i>Secure Your Role &mdash; &#8377;499 Refundable Deposit</h3>
           <p id="jdIntro" style="color:var(--tx-muted);font-size:13.5px;margin-bottom:14px;"></p>
           <div class="upi-card" id="jdUpiCard">
             <div class="upi-qr"><img src="/static/qr.jpg" alt="UPI QR" data-act-error="$hideParent"/></div>
@@ -249,14 +249,14 @@
                   </div>
                   <span class="badge b-violet" id="ovCourseStatusBadge">Active Learning</span>
                 </div>
-                <h3 style="color:#fff;font-size:15px;font-weight:800;margin-bottom:6px;" id="ovCourseTitle">Guided Learning Workspace</h3>
+                <h3 style="color:var(--tx-head);font-size:15px;font-weight:800;margin-bottom:6px;" id="ovCourseTitle">Guided Learning Workspace</h3>
                 <p style="color:var(--tx-muted);font-size:12px;margin-bottom:14px;line-height:1.5;" id="ovCourseDesc">Access your enrolled courses, AI tutoring lessons, and subtopic quizzes.</p>
                 <div style="display:flex;align-items:center;gap:14px;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:8px;padding:8px 12px;margin-bottom:14px;">
                   <div class="ring ring-sm" id="ovCourseProgressFill" style="--pct:0;width:52px;height:52px;flex-shrink:0;">
                     <div class="ring-txt"><b id="ovCoursePct" style="font-size:13px;">0%</b></div>
                   </div>
                   <div>
-                    <span style="font-size:12.5px;font-weight:700;color:#fff;display:block;">Course Progress</span>
+                    <span style="font-size:12.5px;font-weight:700;color:var(--tx-head);display:block;">Course Progress</span>
                     <span style="font-size:10.5px;color:var(--tx-muted);">Track lessons &amp; quizzes</span>
                   </div>
                 </div>
@@ -275,11 +275,11 @@
                   </div>
                   <span class="badge badge-gold" id="ovCoinsVal">0 Coins</span>
                 </div>
-                <h3 style="color:#fff;font-size:15px;font-weight:800;margin-bottom:6px;">Micro-Tasks &amp; Earn Rewards</h3>
+                <h3 style="color:var(--tx-head);font-size:15px;font-weight:800;margin-bottom:6px;">Micro-Tasks &amp; Earn Rewards</h3>
                 <p style="color:var(--tx-muted);font-size:12px;margin-bottom:14px;line-height:1.5;">Complete real-world tasks, earn coins, and unlock course discounts.</p>
                 <div style="display:flex;gap:12px;margin-bottom:14px;">
                   <div style="flex:1;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:8px;padding:8px;text-align:center;">
-                    <span style="font-size:16px;font-weight:800;color:#fff;display:block;" id="ovTasksDoneCount">0</span>
+                    <span style="font-size:16px;font-weight:800;color:var(--tx-head);display:block;" id="ovTasksDoneCount">0</span>
                     <span style="font-size:10px;color:var(--tx-muted);">Tasks Approved</span>
                   </div>
                   <div style="flex:1;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:8px;padding:8px;text-align:center;">
@@ -302,7 +302,7 @@
                   </div>
                   <span class="badge badge-green" id="ovAttStatusBadge"><span class="ping-dot"></span><span id="ovAttBadgeText">Live Tracking</span></span>
                 </div>
-                <h3 style="color:#fff;font-size:15px;font-weight:800;margin-bottom:6px;">Weekly Attendance (10h Target)</h3>
+                <h3 style="color:var(--tx-head);font-size:15px;font-weight:800;margin-bottom:6px;">Weekly Attendance (10h Target)</h3>
                 <p style="color:var(--tx-muted);font-size:12px;margin-bottom:14px;line-height:1.5;">10 hours/week logged-in target required for internship stipend &amp; certificate.</p>
                 <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;">
                   <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--tx-muted);margin-bottom:6px;">
@@ -314,7 +314,7 @@
                   </div>
                 </div>
               </div>
-              <button id="ovAttCardBtn" data-act-click="switchTab" data-arg-click='["cohorts"]' class="btn-tutor" style="background:transparent;border:1px solid var(--border);color:#fff;font-size:13px;padding:10px 16px;margin-top:8px;text-align:center;cursor:pointer;">
+              <button id="ovAttCardBtn" data-act-click="switchTab" data-arg-click='["cohorts"]' class="btn-tutor" style="background:transparent;border:1px solid var(--border);color:var(--tx-head);font-size:13px;padding:10px 16px;margin-top:8px;text-align:center;cursor:pointer;">
                 <span>View Attendance Log →</span>
               </button>
             </div>
@@ -323,7 +323,7 @@
 
           <div class="dash-grid">
             <div class="glass-card">
-              <h3 style="color:#fff;font-size:15px;font-weight:800;margin-bottom:14px;"><i class="fas fa-id-card" style="color:var(--gold);margin-right:8px;"></i>Enrollment Details</h3>
+              <h3 style="color:var(--tx-head);font-size:15px;font-weight:800;margin-bottom:14px;"><i class="fas fa-id-card" style="color:var(--gold);margin-right:8px;"></i>Enrollment Details</h3>
               <div class="info-row"><span class="info-label">Name</span><span class="info-value" id="infoName">&mdash;</span></div>
               <div class="info-row"><span class="info-label">Domain</span><span class="info-value" id="infoDomain">&mdash;</span></div>
               <div class="info-row"><span class="info-label">Joining Date</span><span class="info-value" id="infoJoining">&mdash;</span></div>
@@ -331,7 +331,7 @@
               <div class="info-row"><span class="info-label">Email</span><span class="info-value" id="infoEmail">&mdash;</span></div>
             </div>
             <div class="glass-card">
-              <h3 style="color:#fff;font-size:15px;font-weight:800;margin-bottom:14px;"><i class="fas fa-chart-bar" style="color:var(--gold);margin-right:8px;"></i>Attendance Summary</h3>
+              <h3 style="color:var(--tx-head);font-size:15px;font-weight:800;margin-bottom:14px;"><i class="fas fa-chart-bar" style="color:var(--gold);margin-right:8px;"></i>Attendance Summary</h3>
               <div class="info-row"><span class="info-label">This Week</span><span class="info-value" id="summThisWeek">&mdash;</span></div>
               <div class="info-row"><span class="info-label">Total Weeks Tracked</span><span class="info-value" id="summTotalWeeks">&mdash;</span></div>
               <div class="info-row"><span class="info-label">Weeks Met (10h+)</span><span class="info-value" id="summWeeksMet">&mdash;</span></div>
@@ -478,7 +478,7 @@
           <div style="display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;">
             <div style="font-size:30px;line-height:1;" id="ivCardIcon">&#129302;</div>
             <div style="flex:1;min-width:200px;">
-              <h3 style="font-size:16px;font-weight:800;color:#fff;margin-bottom:4px;" id="ivCardTitle">Virtual Interview</h3>
+              <h3 style="font-size:16px;font-weight:800;color:var(--tx-head);margin-bottom:4px;" id="ivCardTitle">Virtual Interview</h3>
               <p style="color:var(--tx-muted);font-size:13px;line-height:1.6;" id="ivCardBody">Loading your interview status...</p>
             </div>
           </div>
@@ -494,9 +494,9 @@
       <div class="panel" id="panel-paid">
         <div class="panel-head"><h1>Paid Program &mdash; Guaranteed Placement Opportunity</h1><p>A faster route: train, build, and get a guaranteed placement opportunity with our hiring partners.</p></div>
         <div class="glass-card" style="border-color:rgba(76,175,80,0.28);background:rgba(76,175,80,0.04);">
-          <div class="pitch-li"><i class="fas fa-check-circle"></i><span><strong style="color:#fff;">15 days of structured training</strong> in your chosen domain, mentor-guided from day one.</span></div>
-          <div class="pitch-li"><i class="fas fa-check-circle"></i><span><strong style="color:#fff;">45-day production role</strong> working on real projects with code review and support.</span></div>
-          <div class="pitch-li"><i class="fas fa-check-circle"></i><span><strong style="color:#fff;">Guaranteed placement opportunity</strong> with our hiring partners on completion + certification &mdash; your seat is confirmed the moment you enrol.</span></div>
+          <div class="pitch-li"><i class="fas fa-check-circle"></i><span><strong style="color:var(--tx-head);">15 days of structured training</strong> in your chosen domain, mentor-guided from day one.</span></div>
+          <div class="pitch-li"><i class="fas fa-check-circle"></i><span><strong style="color:var(--tx-head);">45-day production role</strong> working on real projects with code review and support.</span></div>
+          <div class="pitch-li"><i class="fas fa-check-circle"></i><span><strong style="color:var(--tx-head);">Guaranteed placement opportunity</strong> with our hiring partners on completion + certification &mdash; your seat is confirmed the moment you enrol.</span></div>
           <div class="pitch-li"><i class="fas fa-check-circle"></i><span>No waiting to be shortlisted &mdash; skip the selection queue entirely.</span></div>
           <div style="margin-top:18px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
             <a class="btn-primary" href="/program" data-act-click="dbertGA" data-arg-click='["paid_program_cta_click", {"source":"portal_paid_tab"}]' style="justify-content:center;"><i class="fas fa-rocket"></i> &nbsp;Explore &amp; Enrol in the Paid Program</a>
@@ -512,7 +512,7 @@
         <!-- Locked state -->
         <div class="glass-card hidden" id="learnLockedCard" style="text-align:center;">
           <div class="tutor-locked-icon" style="margin:0 auto 14px;"><i class="fas fa-lock"></i></div>
-          <h3 style="color:#fff;font-size:17px;font-weight:800;margin-bottom:8px;">Learning unlocks soon</h3>
+          <h3 style="color:var(--tx-head);font-size:17px;font-weight:800;margin-bottom:8px;">Learning unlocks soon</h3>
           <p id="learnLockedMsg" style="color:var(--tx-muted);font-size:13px;margin-bottom:14px;">Your classes begin on your joining date at 6:00 PM.</p>
           <div class="countdown-row" id="learnCountdownRow" style="max-width:360px;margin:0 auto;">
             <div class="cd-unit"><span class="cd-num" id="lcdDays">--</span><span class="cd-label">Days</span></div>

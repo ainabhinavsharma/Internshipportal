@@ -8,14 +8,17 @@
 <body class="classroom">
 
     <header class="classroom-header">
-        <h1>🎓 {{ course.title }} — Day <span id="currentDayNum">{{ enrollment.current_day or 1 }}</span></h1>
-        <div class="row" style="gap:12px">
+        <div class="row" style="gap:10px; align-items:center;">
+            <button type="button" class="btn btn-ghost btn-sm classroom-tree-toggle" data-act-click="toggleTreeSidebar" aria-label="Toggle Syllabus"><i class="fa-solid fa-list-ul"></i> Syllabus</button>
+            <h1 style="font-size:16px; margin:0;">🎓 {{ course.title }} — Day <span id="currentDayNum">{{ enrollment.current_day or 1 }}</span></h1>
+        </div>
+        <div class="row" style="gap:12px; align-items:center;">
             <span id="geminiBadge" class="badge {% if has_gemini_key %}b-green{% else %}b-amber{% endif %}"
                   style="cursor:pointer" data-act-click="openGeminiModal">
                 {% if has_gemini_key %}
-                ⚡ BYOK Gemini Key Active ({{ available_models|length or 'Active' }} Models)
+                ⚡ BYOK Active
                 {% else %}
-                🔑 Connect Gemini Key (Free)
+                🔑 Connect Gemini (Free)
                 {% endif %}
             </span>
             <a href="/courses/{{ course.id }}" class="back-link" style="white-space:nowrap">
@@ -67,9 +70,11 @@
         </div>
     </div>
 
+    <div class="scrim" id="classroomScrim" data-act-click="closeTreeSidebar"></div>
+
     <div class="classroom-layout">
         <!-- Sidebar navigation tree -->
-        <aside class="tree-sidebar">
+        <aside class="tree-sidebar" id="treeSidebar">
             {% for chapter in chapters %}
             {% set outer_loop = loop %}
             <div class="chapter-group">
@@ -131,7 +136,23 @@
         el.textContent = text;
     }
 
+    function toggleTreeSidebar() {
+        const sb = document.getElementById('treeSidebar');
+        const sc = document.getElementById('classroomScrim');
+        if (!sb) return;
+        const isOpen = sb.classList.contains('open');
+        sb.classList.toggle('open', !isOpen);
+        if (sc) sc.classList.toggle('active', !isOpen);
+    }
+    function closeTreeSidebar() {
+        const sb = document.getElementById('treeSidebar');
+        const sc = document.getElementById('classroomScrim');
+        if (sb) sb.classList.remove('open');
+        if (sc) sc.classList.remove('active');
+    }
+
     function loadSubtopic(courseId, subtopicId, btnElem) {
+        closeTreeSidebar();
         activeSubtopicId = subtopicId;
         document.querySelectorAll('.subtopic-btn').forEach(btn => btn.classList.remove('active'));
         if (btnElem) {

@@ -7,7 +7,7 @@
 </head>
 <body class="pg-admin">
 
-  <aside class="sidebar">
+  <aside class="sidebar" id="adminSidebar">
     <div class="sidebar-logo">
       <h2>&#9881; DBERT</h2>
       <p>Admin Panel &mdash; 2026</p>
@@ -35,6 +35,14 @@
       <p style="margin-top:6px;">&#169; 2026 DBERT</p>
     </div>
   </aside>
+
+  <div class="scrim" id="adminScrim" data-act-click="closeAdminSidebar"></div>
+
+  <!-- Mobile Topbar for Admin -->
+  <header class="admin-m-topbar">
+    <button class="admin-m-burger" id="adminBurger" data-act-click="toggleAdminSidebar" aria-label="Toggle Navigation"><i class="fas fa-bars"></i></button>
+    <span class="admin-m-title" id="adminMTitle">Enrollments</span>
+  </header>
 
   <main class="main">
     <div class="page-header">
@@ -635,7 +643,23 @@
     addapp: ()=>{}, upload: ()=>{},
   };
 
+  function toggleAdminSidebar(){
+    const sb = document.getElementById('adminSidebar');
+    const sc = document.getElementById('adminScrim');
+    if(!sb) return;
+    const isOpen = sb.classList.contains('open');
+    sb.classList.toggle('open', !isOpen);
+    if(sc) sc.classList.toggle('active', !isOpen);
+  }
+  function closeAdminSidebar(){
+    const sb = document.getElementById('adminSidebar');
+    const sc = document.getElementById('adminScrim');
+    if(sb) sb.classList.remove('open');
+    if(sc) sc.classList.remove('active');
+  }
+
   function switchTab(name){
+    closeAdminSidebar();
     document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.tab===name));
     document.querySelectorAll('.section-panel').forEach(el => el.classList.remove('active'));
     const panel = document.getElementById('panel-'+name);
@@ -643,6 +667,8 @@
     const meta = TAB_META[name] || {title:name, sub:'', stats:false};
     document.getElementById('section-title').textContent = meta.title;
     document.getElementById('section-sub').textContent = meta.sub;
+    const mTitle = document.getElementById('adminMTitle');
+    if(mTitle) mTitle.textContent = meta.title;
     document.getElementById('statsGrid').style.display = meta.stats ? 'grid' : 'none';
     if(TAB_LOADERS[name]) TAB_LOADERS[name]();
   }
