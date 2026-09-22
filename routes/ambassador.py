@@ -1,15 +1,14 @@
 from flask import Blueprint, jsonify, render_template, request, redirect, flash, session
 from markupsafe import escape
+ambassador_bp = Blueprint('ambassador', __name__)
+
 from app import (
     get_db, is_admin_request, current_intern, current_staff, clean_text,
     record_referral_click, log_error, encrypt_upi, decrypt_upi, now_str,
-    row_to_dict, FERNET_KEY, log_abuse, get_client_ip, rate_check,
-    RL_WITHDRAWAL, RL_UPI_UPDATE, AMBASSADOR_ENABLED, get_coin_balances,
-    ensure_referral_code, is_valid_upi, mask_upi, debit_referral_coins,
-    referral_link
+    ensure_referral_code, row_to_dict, get_coin_balances, AMBASSADOR_ENABLED,
+    referral_link, mask_upi, get_client_ip, rate_check, RL_UPI_UPDATE,
+    log_abuse, is_valid_upi, RL_WITHDRAWAL, FERNET_KEY, debit_referral_coins
 )
-
-ambassador_bp = Blueprint('ambassador', __name__)
 
 @ambassador_bp.route("/ambassador")
 def ambassador_page():
