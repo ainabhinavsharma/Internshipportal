@@ -123,6 +123,17 @@
               <p style="color:var(--tx-muted);font-size:11px;margin-top:4px;">Use PhonePe, GPay, Paytm or any UPI app</p>
             </div>
           </div>
+          <div class="joining-section" id="ovDomainSection">
+            <label for="ovDomainSelect">Select Your Internship Domain *</label>
+            <select id="ovDomainSelect" class="field-input" style="width:100%;margin-top:6px;background:rgba(255,255,255,0.06);color:var(--tx-head);border:1px solid var(--border);border-radius:var(--r-sm);padding:10px 12px;font-size:14px;">
+              <option value="">-- Choose Specialization Track --</option>
+              <option value="AI Agent Development">🤖 AI Agent Development</option>
+              <option value="Data Analyst">📊 Data Analyst</option>
+              <option value="Full Stack Development">💻 Full Stack Development</option>
+              <option value="Python Automation">⚡ Python Automation</option>
+            </select>
+            <p style="color:var(--tx-muted);font-size:11px;margin-top:4px;">Choose the domain for your curriculum, assignments, and verified certificate.</p>
+          </div>
           <div class="joining-section">
             <label>Choose Your Joining Date (Monday) *</label>
             <div id="calendarWidget" class="cal-widget">
@@ -135,8 +146,14 @@
               <div id="calGrid" class="cal-grid" role="grid" aria-label="Available joining Mondays"></div>
               <div id="calSelected" class="cal-selected" aria-live="polite"></div>
             </div>
+            <div style="margin-top:10px;">
+              <label for="ovMondaySelect" style="font-size:12px;color:var(--tx-muted);display:block;margin-bottom:4px;">Or Quick-Select Monday:</label>
+              <select id="ovMondaySelect" class="field-input" style="width:100%;background:rgba(255,255,255,0.06);color:var(--tx-head);border:1px solid var(--border);border-radius:var(--r-sm);padding:8px 10px;font-size:13px;" data-act-change="onMondaySelectChange" data-arg-change='["$el"]'>
+                <option value="">-- Select Monday Date --</option>
+              </select>
+            </div>
             <input type="hidden" id="joiningDateValue" value=""/>
-            <p style="color:var(--tx-muted);font-size:11px;margin-top:6px;"><i class="fas fa-info-circle" style="color:var(--gold);margin-right:4px;"></i>Only the highlighted Mondays are available. Batches start every Monday, on or before 31 Dec 2026.</p>
+            <p style="color:var(--tx-muted);font-size:11px;margin-top:6px;"><i class="fas fa-info-circle" style="color:var(--gold);margin-right:4px;"></i>Highlighted Mondays are available. You may select the last 2 Mondays (for instant access) or upcoming batches.</p>
           </div>
           <div class="joining-section">
             <label class="file-label">Upload Payment Screenshot *</label>
@@ -545,6 +562,119 @@
 
     </div><!-- /content-wrap -->
   </main>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       SELF-HEALING ONBOARDING & DATA COMPLETION WIZARD
+       Prompts interns upon login to complete missing entries (Domain,
+       Monday Joining Date, ₹499 Deposit Proof, Academic Details)
+       ═══════════════════════════════════════════════════════════════════ -->
+  <div id="wizardOverlay" class="wizard-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="wizardTitle">
+    <div class="wizard-box">
+      <!-- Step Header & Progress Indicator -->
+      <div class="wizard-head">
+        <div class="wizard-head-top">
+          <div class="wizard-badge" id="wizardBadge">Step 1 of 3</div>
+          <button type="button" class="btn btn-ghost btn-sm" id="wizardDismissBtn" style="padding:2px 8px;font-size:16px;color:var(--tx-muted);line-height:1;border:none;cursor:pointer;" data-act-click="wizardDismiss" title="Remind me later" aria-label="Close wizard">&times;</button>
+        </div>
+        <div class="wizard-progress-track">
+          <div class="wizard-progress-fill" id="wizardProgressFill" style="width: 33%;"></div>
+        </div>
+        <h2 id="wizardTitle" class="wizard-title">Complete Your Internship Profile</h2>
+        <p id="wizardSubtitle" class="wizard-subtitle">We need a few quick details to configure your customized learning track and attendance.</p>
+      </div>
+
+      <!-- Step Dynamic Content Container -->
+      <div class="wizard-body" id="wizardBody">
+        <!-- Injected dynamically by renderWizardStep() -->
+      </div>
+
+      <!-- Alert / Error Container -->
+      <div class="form-error hidden" id="wizardError" style="margin: 8px 24px 0;" role="alert">
+        <i class="fa fa-circle-exclamation"></i><span id="wizardErrorText"></span>
+      </div>
+
+      <!-- Footer Controls -->
+      <div class="wizard-foot" id="wizardFoot">
+        <button type="button" class="btn btn-ghost hidden" id="wizardBackBtn" data-act-click="wizardPrevStep">
+          <i class="fas fa-arrow-left"></i> &nbsp;Back
+        </button>
+        <button type="button" class="btn btn-primary" id="wizardNextBtn" data-act-click="wizardSubmitCurrentStep" style="margin-left:auto;min-width:140px;justify-content:center;">
+          <span class="btn-lbl">Save &amp; Continue &nbsp;<i class="fas fa-arrow-right"></i></span>
+          <span class="btn-spinner-sm"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <style nonce="{{ csp_nonce() }}">
+  .wizard-overlay {
+    position: fixed; inset: 0; z-index: 9999;
+    background: rgba(9, 12, 20, 0.88);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    display: flex; align-items: center; justify-content: center;
+    padding: 16px; overflow-y: auto;
+    animation: fadeIn .25s ease both;
+  }
+  .wizard-overlay.hidden { display: none !important; }
+  .wizard-box {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r-lg);
+    box-shadow: 0 24px 60px rgba(0,0,0,0.5), 0 0 28px rgba(226,185,111,0.12);
+    width: 100%; max-width: 580px;
+    overflow: hidden; display: flex; flex-direction: column;
+    animation: modalScale .25s cubic-bezier(0.16,1,0.3,1) both;
+  }
+  .wizard-head { padding: 22px 24px 14px; border-bottom: 1px solid var(--border); }
+  .wizard-head-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .wizard-badge {
+    background: rgba(226,185,111,0.12); color: var(--gold);
+    border: 1px solid rgba(226,185,111,0.25); border-radius: 999px;
+    padding: 3px 12px; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .wizard-progress-track { height: 4px; background: rgba(255,255,255,0.08); border-radius: 99px; overflow: hidden; margin-bottom: 14px; }
+  .wizard-progress-fill { height: 100%; background: linear-gradient(90deg, var(--gold), var(--violet)); transition: width .3s ease; }
+  .wizard-title { font-size: 18px; font-weight: 800; color: var(--tx-head); margin: 0 0 4px; }
+  .wizard-subtitle { font-size: 13px; color: var(--tx-muted); margin: 0; line-height: 1.4; }
+  .wizard-body { padding: 20px 24px; max-height: 60vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  .wizard-foot { padding: 16px 24px 20px; border-top: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
+
+  .wizard-card-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+  @media (min-width: 480px) {
+    .wizard-card-grid.cols-2 { grid-template-columns: 1fr 1fr; }
+  }
+  .wiz-choice-card {
+    background: rgba(255,255,255,0.03); border: 1.5px solid var(--border);
+    border-radius: var(--r-sm); padding: 14px 16px; cursor: pointer;
+    transition: all .2s ease; display: flex; align-items: center; gap: 12px; text-align: left; width: 100%;
+  }
+  .wiz-choice-card:hover { border-color: var(--gold); background: rgba(226,185,111,0.05); }
+  .wiz-choice-card.selected {
+    border-color: var(--gold); background: rgba(226,185,111,0.1);
+    box-shadow: 0 0 16px rgba(226,185,111,0.18);
+  }
+  .wiz-choice-icon { font-size: 24px; flex-shrink: 0; }
+  .wiz-choice-content { flex: 1; min-width: 0; }
+  .wiz-choice-title { font-size: 14px; font-weight: 700; color: var(--tx-head); margin-bottom: 2px; }
+  .wiz-choice-desc { font-size: 11.5px; color: var(--tx-muted); line-height: 1.35; }
+  .wiz-check-mark { display: none; margin-left: auto; flex-shrink: 0; }
+  .wiz-choice-card.selected .wiz-check-mark { display: block; }
+  .wiz-pill { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 99px; margin-top: 4px; }
+  .wiz-pill-green { background: rgba(74,222,128,0.15); color: #4ade80; border: 1px solid rgba(74,222,128,0.3); }
+  .wiz-pill-blue { background: rgba(96,165,250,0.15); color: #60a5fa; border: 1px solid rgba(96,165,250,0.3); }
+
+  .wiz-form-group { margin-bottom: 14px; }
+  .wiz-form-group label { display: block; font-size: 12.5px; font-weight: 700; color: var(--tx-head); margin-bottom: 5px; }
+  .wiz-form-input {
+    width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+    border-radius: var(--r-sm); color: var(--tx-head); padding: 10px 12px; font-size: 14px; outline: none;
+  }
+  .wiz-form-input:focus { border-color: var(--gold); background: rgba(255,255,255,0.08); }
+
+  .wiz-success-screen { text-align: center; padding: 28px 12px; }
+  .wiz-success-icon { font-size: 52px; color: var(--green); margin-bottom: 14px; animation: bounceIn .4s ease both; }
+  @keyframes bounceIn { 0%{transform:scale(0.3);opacity:0} 60%{transform:scale(1.1)} 100%{transform:scale(1);opacity:1} }
+  </style>
 
   <div id="_toast"></div>
 
@@ -1016,6 +1146,416 @@
       }).catch(()=>{ box.innerHTML='<p style="color:var(--tx-muted);font-size:14px;">Network error.</p>'; });
   }
 
+  /* ════ SELF-HEALING DATA COMPLETION WIZARD ════ */
+  let _wizardSteps = [];
+  let _wizardIdx = 0;
+  let _wizardSelectedVal = null;
+  let _wizardSelectedFile = null;
+
+  async function checkWizardStatus(){
+    try{
+      const res = await fetch('/intern/wizard-status', {credentials:'include'});
+      if(!res.ok) return;
+      const data = await res.json();
+      if(data.status === 'success' && data.needs_completion && Array.isArray(data.steps) && data.steps.length > 0){
+        _wizardSteps = data.steps;
+        _wizardIdx = 0;
+        _wizardSelectedVal = null;
+        _wizardSelectedFile = null;
+        renderWizardStep();
+        const ov = document.getElementById('wizardOverlay');
+        if(ov) ov.classList.remove('hidden');
+      } else {
+        const ov = document.getElementById('wizardOverlay');
+        if(ov) ov.classList.add('hidden');
+      }
+    }catch(e){
+      console.warn("checkWizardStatus error:", e);
+    }
+  }
+
+  function renderWizardStep(){
+    const ov = document.getElementById('wizardOverlay');
+    if(!ov) return;
+    if(_wizardIdx >= _wizardSteps.length){
+      renderWizardCelebration();
+      return;
+    }
+
+    const step = _wizardSteps[_wizardIdx];
+    const total = _wizardSteps.length;
+    const currentNum = _wizardIdx + 1;
+    const pct = Math.round((currentNum / total) * 100);
+
+    const badge = document.getElementById('wizardBadge');
+    if(badge) badge.textContent = `Step ${currentNum} of ${total}`;
+
+    const fill = document.getElementById('wizardProgressFill');
+    if(fill) fill.style.width = pct + '%';
+
+    const title = document.getElementById('wizardTitle');
+    if(title) title.textContent = step.title || 'Profile Update Required';
+
+    const subtitle = document.getElementById('wizardSubtitle');
+    if(subtitle) subtitle.textContent = step.subtitle || '';
+
+    hideWizardError();
+
+    const backBtn = document.getElementById('wizardBackBtn');
+    if(backBtn){
+      if(_wizardIdx > 0) backBtn.classList.remove('hidden');
+      else backBtn.classList.add('hidden');
+    }
+
+    const nextBtn = document.getElementById('wizardNextBtn');
+    if(nextBtn){
+      nextBtn.disabled = false;
+      nextBtn.classList.remove('loading');
+      const isLast = (currentNum === total);
+      const lbl = nextBtn.querySelector('.btn-lbl');
+      if(lbl) lbl.innerHTML = isLast ? 'Complete &amp; Continue &nbsp;<i class="fas fa-check"></i>' : 'Save &amp; Continue &nbsp;<i class="fas fa-arrow-right"></i>';
+    }
+
+    const body = document.getElementById('wizardBody');
+    if(!body) return;
+
+    if(step.type === 'domain_select'){
+      _wizardSelectedVal = step.current_value || (_intern && _intern.domain && _intern.domain !== 'Undeclared' ? _intern.domain : (step.options && step.options[0]) || 'AI Agent Development');
+      const domainMeta = {
+        'AI Agent Development': { icon: '🤖', desc: 'LLM agents, LangChain/LlamaIndex, RAG architectures & prompt engineering.' },
+        'Data Analyst': { icon: '📊', desc: 'Data visualization, SQL, Python pandas/numpy & predictive dashboards.' },
+        'Full Stack Development': { icon: '💻', desc: 'Modern web apps, React, Python Flask/FastAPI & database systems.' },
+        'Python Automation': { icon: '⚡', desc: 'Workflow automation, web scrapers, ETL pipelines & bots.' }
+      };
+      const cardsHtml = (step.options || []).map(opt => {
+        const meta = domainMeta[opt] || { icon: '💼', desc: 'Internship specialization track.' };
+        const sel = (_wizardSelectedVal === opt) ? ' selected' : '';
+        return `
+          <div class="wiz-choice-card${sel}" data-value="${escHtml(opt)}" tabindex="0" role="button" ${actAttr('click', 'wizardSelectCard', [opt])}>
+            <span class="wiz-choice-icon">${meta.icon}</span>
+            <div class="wiz-choice-content">
+              <div class="wiz-choice-title">${escHtml(opt)}</div>
+              <div class="wiz-choice-desc">${escHtml(meta.desc)}</div>
+            </div>
+            <div class="wiz-check-mark"><i class="fas fa-check-circle" style="color:var(--gold);font-size:18px;"></i></div>
+          </div>
+        `;
+      }).join('');
+      body.innerHTML = `<div class="wizard-card-grid">${cardsHtml}</div>`;
+
+    } else if(step.type === 'joining_date_select'){
+      const options = step.options || [];
+      _wizardSelectedVal = step.current_value || options[1] || options[0] || '';
+      const labels = step.labels || {};
+      const cardsHtml = options.map((opt, idx) => {
+        const isPast = idx < 2;
+        const sel = (_wizardSelectedVal === opt) ? ' selected' : '';
+        const pill = isPast 
+          ? '<span class="wiz-pill wiz-pill-green"><i class="fas fa-bolt"></i> Instant Access</span>'
+          : '<span class="wiz-pill wiz-pill-blue"><i class="fas fa-calendar-alt"></i> Upcoming Batch</span>';
+        const sub = isPast
+          ? 'Immediate unlock for course access, daily attendance and mentor sessions.'
+          : 'Starts 6:00 PM on Monday. Portal modules unlock on batch day.';
+        const labelText = labels[opt] || opt;
+        return `
+          <div class="wiz-choice-card${sel}" data-value="${escHtml(opt)}" tabindex="0" role="button" ${actAttr('click', 'wizardSelectCard', [opt])}>
+            <span class="wiz-choice-icon"><i class="fas fa-calendar-check" style="color:${isPast?'#4ade80':'var(--gold)'};font-size:22px;"></i></span>
+            <div class="wiz-choice-content">
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span class="wiz-choice-title">${escHtml(labelText)}</span>
+                ${pill}
+              </div>
+              <div class="wiz-choice-desc">${escHtml(sub)}</div>
+            </div>
+            <div class="wiz-check-mark"><i class="fas fa-check-circle" style="color:var(--gold);font-size:18px;"></i></div>
+          </div>
+        `;
+      }).join('');
+      body.innerHTML = `<div class="wizard-card-grid">${cardsHtml}</div>`;
+
+    } else if(step.type === 'file_upload'){
+      _wizardSelectedFile = null;
+      const upi = step.upi_id || 'Q681021429@ybl';
+      const amt = step.amount || 499;
+      const rejNotice = step.is_rejected 
+        ? `<div style="background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);border-radius:var(--r-sm);padding:10px 14px;color:#fca5a5;font-size:12.5px;margin-bottom:14px;"><i class="fas fa-exclamation-triangle"></i> &nbsp;Your previous payment receipt could not be verified. Please upload a clear screenshot showing the UTR / Transaction ID.</div>`
+        : '';
+
+      body.innerHTML = `
+        ${rejNotice}
+        <div style="background:rgba(226,185,111,0.06);border:1px solid rgba(226,185,111,0.2);border-radius:var(--r-sm);padding:14px 16px;margin-bottom:16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <span style="font-size:13px;color:var(--tx-muted);">Refundable Security Deposit:</span>
+            <strong style="color:var(--gold);font-size:18px;">₹${amt}</strong>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:rgba(0,0,0,0.25);padding:8px 12px;border-radius:6px;">
+            <code style="color:#fff;font-size:13px;font-weight:700;">${escHtml(upi)}</code>
+            <button type="button" class="btn btn-secondary btn-sm" ${actAttr('click', 'copyUpiWizard', [upi])} style="padding:4px 10px;font-size:11.5px;">
+              <i class="fas fa-copy"></i> Copy UPI
+            </button>
+          </div>
+          <p style="font-size:11.5px;color:var(--tx-muted);margin:8px 0 0;"><i class="fas fa-shield-alt" style="color:#4ade80;"></i> 100% Refundable upon internship completion.</p>
+        </div>
+
+        <div style="border:2px dashed var(--border);border-radius:var(--r-md);padding:24px 16px;text-align:center;cursor:pointer;background:rgba(255,255,255,0.02);transition:border-color .2s;" ${actAttr('click', 'triggerWizardFileInput', [])}>
+          <input type="file" id="wizardFileInput" accept="image/png,image/jpeg,image/jpg,application/pdf" style="display:none;" ${actAttr('change', 'onWizardFileChange', ['$el'])}>
+          <i class="fas fa-cloud-arrow-up" style="font-size:32px;color:var(--gold);margin-bottom:8px;"></i>
+          <div style="font-size:13.5px;font-weight:700;color:var(--tx-head);">Click or Drag to Upload Payment Screenshot</div>
+          <div style="font-size:11.5px;color:var(--tx-muted);margin-top:4px;">Supported: PNG, JPG, JPEG, PDF (Max 6MB)</div>
+          <div id="wizardFileDisplay" class="hidden" style="margin-top:10px;display:inline-flex;align-items:center;gap:6px;background:rgba(74,222,128,0.15);color:#4ade80;border:1px solid rgba(74,222,128,0.3);padding:4px 12px;border-radius:99px;font-size:12px;font-weight:700;">
+            <i class="fas fa-file-check"></i> <span id="wizardFileName"></span>
+          </div>
+        </div>
+      `;
+
+    } else if(step.type === 'profile_form'){
+      const fields = step.fields || {};
+      body.innerHTML = `
+        <div class="wiz-form-group">
+          <label for="wizCollege"><i class="fas fa-university" style="color:var(--gold);"></i> College / University *</label>
+          <input type="text" id="wizCollege" class="wiz-form-input" placeholder="e.g. Indian Institute of Technology" value="${escHtml(fields.college || '')}">
+        </div>
+        <div class="wiz-form-group">
+          <label for="wizCourse"><i class="fas fa-graduation-cap" style="color:var(--gold);"></i> Degree / Course *</label>
+          <input type="text" id="wizCourse" class="wiz-form-input" placeholder="e.g. B.Tech Computer Science, BCA, MCA" value="${escHtml(fields.course || '')}">
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="wiz-form-group">
+            <label for="wizYear"><i class="fas fa-calendar" style="color:var(--gold);"></i> Graduation Year</label>
+            <input type="text" id="wizYear" class="wiz-form-input" placeholder="e.g. 2026" value="${escHtml(fields.year_of_passing || '')}">
+          </div>
+          <div class="wiz-form-group">
+            <label for="wizCity"><i class="fas fa-location-dot" style="color:var(--gold);"></i> Current City</label>
+            <input type="text" id="wizCity" class="wiz-form-input" placeholder="e.g. Bengaluru" value="${escHtml(fields.city || '')}">
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  function showWizardError(msg){
+    const el = document.getElementById('wizardError');
+    const txt = document.getElementById('wizardErrorText');
+    if(txt) txt.textContent = msg;
+    if(el) el.classList.remove('hidden');
+  }
+
+  function hideWizardError(){
+    const el = document.getElementById('wizardError');
+    if(el) el.classList.add('hidden');
+  }
+
+  function wizardSelectCard(val){
+    _wizardSelectedVal = val;
+    hideWizardError();
+    const body = document.getElementById('wizardBody');
+    if(!body) return;
+    const cards = body.querySelectorAll('.wiz-choice-card');
+    cards.forEach(c => {
+      if(c.dataset.value === val) c.classList.add('selected');
+      else c.classList.remove('selected');
+    });
+  }
+
+  function triggerWizardFileInput(){
+    const fi = document.getElementById('wizardFileInput');
+    if(fi) fi.click();
+  }
+
+  function onWizardFileChange(input){
+    hideWizardError();
+    if(input.files && input.files[0]){
+      const f = input.files[0];
+      if(f.size > 6 * 1024 * 1024){
+        showWizardError('File must be under 6MB.');
+        return;
+      }
+      const ext = f.name.split('.').pop().toLowerCase();
+      if(!['png', 'jpg', 'jpeg', 'pdf'].includes(ext)){
+        showWizardError('Only PNG, JPG, JPEG or PDF files are accepted.');
+        return;
+      }
+      _wizardSelectedFile = f;
+      const disp = document.getElementById('wizardFileDisplay');
+      const fn = document.getElementById('wizardFileName');
+      if(fn) fn.textContent = f.name;
+      if(disp) disp.classList.remove('hidden');
+    }
+  }
+
+  function copyUpiWizard(upi){
+    navigator.clipboard.writeText(upi).then(()=>{
+      showToast('UPI ID copied: ' + upi, 'green');
+    }).catch(()=>{
+      showToast('UPI: ' + upi);
+    });
+  }
+
+  function wizardPrevStep(){
+    if(_wizardIdx > 0){
+      _wizardIdx--;
+      renderWizardStep();
+    }
+  }
+
+  async function wizardSubmitCurrentStep(){
+    hideWizardError();
+    if(_wizardIdx >= _wizardSteps.length){
+      wizardClose();
+      return;
+    }
+
+    const step = _wizardSteps[_wizardIdx];
+    const nextBtn = document.getElementById('wizardNextBtn');
+
+    if(step.type === 'domain_select'){
+      if(!_wizardSelectedVal){
+        showWizardError('Please select a domain to continue.');
+        return;
+      }
+    } else if(step.type === 'joining_date_select'){
+      if(!_wizardSelectedVal){
+        showWizardError('Please select a batch start date to continue.');
+        return;
+      }
+    } else if(step.type === 'file_upload'){
+      if(!_wizardSelectedFile){
+        showWizardError('Please select your payment screenshot before continuing.');
+        return;
+      }
+    } else if(step.type === 'profile_form'){
+      const colEl = document.getElementById('wizCollege');
+      const crsEl = document.getElementById('wizCourse');
+      const college = colEl ? colEl.value.trim() : '';
+      const course = crsEl ? crsEl.value.trim() : '';
+      if(!college || college.length < 2){
+        showWizardError('Please enter your college name.');
+        return;
+      }
+      if(!course){
+        showWizardError('Please enter your course / degree.');
+        return;
+      }
+    }
+
+    if(nextBtn){
+      nextBtn.disabled = true;
+      nextBtn.classList.add('loading');
+    }
+
+    try{
+      let res;
+      if(step.type === 'file_upload'){
+        const fd = new FormData();
+        fd.append('step_key', 'payment_screenshot');
+        fd.append('payment_screenshot', _wizardSelectedFile);
+        res = await fetch('/intern/save-wizard-step', { method: 'POST', credentials: 'include', body: fd });
+      } else if(step.type === 'profile_form'){
+        const colEl = document.getElementById('wizCollege');
+        const crsEl = document.getElementById('wizCourse');
+        const yrEl = document.getElementById('wizYear');
+        const ctEl = document.getElementById('wizCity');
+        const payload = {
+          step_key: 'academic_profile',
+          college: colEl ? colEl.value.trim() : '',
+          course: crsEl ? crsEl.value.trim() : '',
+          year_of_passing: yrEl ? yrEl.value.trim() : '',
+          city: ctEl ? ctEl.value.trim() : ''
+        };
+        res = await fetch('/intern/save-wizard-step', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } else {
+        const payload = {
+          step_key: step.key,
+          value: _wizardSelectedVal
+        };
+        res = await fetch('/intern/save-wizard-step', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      }
+
+      const data = await res.json();
+      if(data.status === 'success'){
+        showToast(data.message || 'Saved successfully.', 'green');
+        if(step.type === 'domain_select'){
+          _intern.domain = _wizardSelectedVal;
+        } else if(step.type === 'joining_date_select'){
+          _joiningDateStr = _wizardSelectedVal;
+          _joiningDate = parseJoiningDate(_joiningDateStr);
+        }
+        _wizardIdx++;
+        renderWizardStep();
+      } else {
+        showWizardError(data.message || 'Failed to save step.');
+        if(nextBtn){ nextBtn.disabled = false; nextBtn.classList.remove('loading'); }
+      }
+    }catch(e){
+      showWizardError('Network error. Please try again.');
+      if(nextBtn){ nextBtn.disabled = false; nextBtn.classList.remove('loading'); }
+    }
+  }
+
+  function renderWizardCelebration(){
+    const body = document.getElementById('wizardBody');
+    const badge = document.getElementById('wizardBadge');
+    const fill = document.getElementById('wizardProgressFill');
+    const title = document.getElementById('wizardTitle');
+    const subtitle = document.getElementById('wizardSubtitle');
+    const foot = document.getElementById('wizardFoot');
+
+    if(badge) badge.textContent = 'All Done';
+    if(fill) fill.style.width = '100%';
+    if(title) title.textContent = 'Setup Complete!';
+    if(subtitle) subtitle.textContent = 'Your intern account has been synchronized successfully.';
+    if(foot) foot.style.display = 'none';
+
+    if(body){
+      body.innerHTML = `
+        <div class="wiz-success-screen">
+          <div class="wiz-success-icon"><i class="fas fa-circle-check"></i></div>
+          <h3 style="font-size:20px;font-weight:800;color:var(--tx-head);margin-bottom:8px;">You're All Set!</h3>
+          <p style="font-size:13.5px;color:var(--tx-muted);max-width:380px;margin:0 auto 20px;line-height:1.5;">
+            Your profile details and domain configurations are now securely synced to your dashboard and database.
+          </p>
+          <button type="button" class="btn btn-primary" ${actAttr('click', 'wizardClose', [])} style="padding:12px 28px;font-size:14px;font-weight:700;margin:0 auto;justify-content:center;">
+            <i class="fas fa-rocket"></i> &nbsp;Enter My Dashboard
+          </button>
+        </div>
+      `;
+    }
+  }
+
+  function wizardClose(){
+    const ov = document.getElementById('wizardOverlay');
+    if(ov) ov.classList.add('hidden');
+    loadPortal();
+  }
+
+  function wizardDismiss(){
+    const ov = document.getElementById('wizardOverlay');
+    if(ov) ov.classList.add('hidden');
+  }
+
+  // Bind wizard functions to window for CSP compliance
+  window.checkWizardStatus = checkWizardStatus;
+  window.renderWizardStep = renderWizardStep;
+  window.wizardSelectCard = wizardSelectCard;
+  window.triggerWizardFileInput = triggerWizardFileInput;
+  window.onWizardFileChange = onWizardFileChange;
+  window.copyUpiWizard = copyUpiWizard;
+  window.wizardPrevStep = wizardPrevStep;
+  window.wizardSubmitCurrentStep = wizardSubmitCurrentStep;
+  window.renderWizardCelebration = renderWizardCelebration;
+  window.wizardClose = wizardClose;
+  window.wizardDismiss = wizardDismiss;
+
   /* ════ MAIN PORTAL BOOTSTRAP ════ */
   async function loadPortal(){
     const loadScr = document.getElementById('loadingScreen');
@@ -1100,6 +1640,8 @@
       if(_status==='Accepted'){
         try{ initAccepted(); }catch(err){ console.warn("initAccepted err:", err); }
       }
+
+      try{ await checkWizardStatus(); }catch(err){ console.warn("checkWizardStatus err:", err); }
     }catch(e){
       console.error("loadPortal failed:", e);
       if(loadScr) loadScr.classList.add('hidden');
@@ -1404,6 +1946,18 @@
   async function loadUpcomingMondays(){
     try{const res=await fetch('/upcoming-mondays');const data=await res.json();_mondays=(data.status==='success'&&Array.isArray(data.mondays))?data.mondays:[];}catch(e){_mondays=[];}
     _selectedJoining='';const hv=document.getElementById('joiningDateValue');if(hv)hv.value='';
+    const mSel=document.getElementById('ovMondaySelect');
+    if(mSel){
+      mSel.innerHTML='<option value="">-- Select Monday Date --</option>'+_mondays.map((d,idx)=>{
+        const isPast=idx<2;
+        const tag=isPast?' (Instant Access)':' (Upcoming)';
+        return `<option value="${d}">${d}${tag}</option>`;
+      }).join('');
+    }
+    const dSel=document.getElementById('ovDomainSelect');
+    if(dSel && _intern && _intern.domain && _intern.domain!=='Undeclared'){
+      dSel.value=_intern.domain;
+    }
     _calMonths=[...new Set(_mondays.map(d=>d.slice(0,7)))].sort();_calIdx=0;bindCalKeys();renderCalendar();
   }
   function bindCalKeys(){if(_calKeyBound)return;const grid=document.getElementById('calGrid');if(!grid)return;grid.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target.classList.contains('available')){e.preventDefault();selectJoining(e.target.dataset.iso);}});_calKeyBound=true;}
@@ -1418,7 +1972,21 @@
     grid.innerHTML=html;document.getElementById('calPrev').disabled=(_calIdx<=0);document.getElementById('calNext').disabled=(_calIdx>=_calMonths.length-1);
   }
   function calNav(dir){const n=_calIdx+dir;if(n>=0&&n<_calMonths.length){_calIdx=n;renderCalendar();}}
-  function selectJoining(iso){if(!_mondays.includes(iso))return;_selectedJoining=iso;document.getElementById('joiningDateValue').value=iso;const dt=new Date(iso);document.getElementById('calSelected').innerHTML='Selected: <strong>'+dt.toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'short',year:'numeric'})+'</strong>';renderCalendar();}
+  function selectJoining(iso){
+    if(!_mondays.includes(iso))return;
+    _selectedJoining=iso;
+    const hv=document.getElementById('joiningDateValue');if(hv)hv.value=iso;
+    const mSel=document.getElementById('ovMondaySelect');if(mSel)mSel.value=iso;
+    const dt=new Date(iso);
+    document.getElementById('calSelected').innerHTML='Selected: <strong>'+dt.toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'short',year:'numeric'})+'</strong>';
+    renderCalendar();
+  }
+  function onMondaySelectChange(el){
+    if(el && el.value){
+      selectJoining(el.value);
+    }
+  }
+  window.onMondaySelectChange = onMondaySelectChange;
   function onFileChange(input){const fn=document.getElementById('fileNameDisplay');if(input.files&&input.files[0]){_selectedFile=input.files[0];fn.textContent=_selectedFile.name;fn.classList.remove('hidden');}else{_selectedFile=null;fn.classList.add('hidden');}}
   function showEnrollError(msg){const el=document.getElementById('enrollError');el.querySelector('span').textContent=msg;el.classList.add('visible');}
   function hideEnrollError(){document.getElementById('enrollError').classList.remove('visible');}
@@ -1430,8 +1998,14 @@
     if(_selectedFile.size>6*1024*1024){showEnrollError('File must be under 6MB.');return;}
     const ext=_selectedFile.name.split('.').pop().toLowerCase();
     if(!['png','jpg','jpeg','pdf'].includes(ext)){showEnrollError('Only PNG, JPG, JPEG or PDF accepted.');return;}
+    const dSel=document.getElementById('ovDomainSelect');
+    const domain=dSel?dSel.value.trim():'';
+    if(dSel && (!domain || domain==='Undeclared') && (!_intern.domain || _intern.domain==='Undeclared')){
+      showEnrollError('Please select your internship domain.');return;
+    }
     const btn=document.getElementById('enrollBtn');btn.disabled=true;btn.classList.add('loading');
     const fd=new FormData();fd.append('payment_screenshot',_selectedFile);fd.append('joining_date',joining);
+    if(domain) fd.append('domain', domain);
     try{
       const res=await fetch('/enroll',{method:'POST',credentials:'include',body:fd});const data=await res.json();
       if(data.status==='success'){dbertGA('free_enroll_submitted',{});showToast('Enrollment submitted! Verifying within 24h.','green');setTimeout(()=>window.location.reload(),1500);}

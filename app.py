@@ -971,28 +971,38 @@ def get_week_bounds(ref_date=None):
     return week_start, week_end
 
 
+PAST_MONDAYS_COUNT = 2
 UPCOMING_MONDAYS_COUNT = 3
 
-def get_upcoming_mondays():
-    """Return at most the next 3 upcoming Mondays (strictly future; if today is
-    Monday, start from next Monday), each on or before 31 Dec 2026.
+def get_selectable_mondays(ref_date=None):
+    """Return selectable Mondays: exactly the last 2 Mondays (most recent + one before that)
+    plus the next 3 upcoming Mondays, each on or before 31 Dec 2026.
     Format: list of '%Y-%m-%d' strings."""
-    mondays = []
-    today = date.today()
-    # Next Monday is always strictly in the future (7 days ahead if today is Monday).
-    if today.weekday() == 0:
-        next_monday = today + timedelta(days=7)
-    else:
-        next_monday = today + timedelta(days=(7 - today.weekday()))
-    current = next_monday
-    while current <= ENROLLMENT_DEADLINE and len(mondays) < UPCOMING_MONDAYS_COUNT:
-        mondays.append(current.strftime("%Y-%m-%d"))
-        current += timedelta(days=7)
-    return mondays
+    if ref_date is None:
+        ref_date = date.today()
+    # most_recent_monday is ref_date if today is Monday, else Monday of current week
+    most_recent_monday = ref_date - timedelta(days=ref_date.weekday())
+    prev_monday_1 = most_recent_monday
+    prev_monday_2 = most_recent_monday - timedelta(days=7)
+    
+    past_mondays = [prev_monday_2, prev_monday_1]
+    
+    upcoming_mondays = []
+    curr = most_recent_monday + timedelta(days=7)
+    while curr <= ENROLLMENT_DEADLINE and len(upcoming_mondays) < UPCOMING_MONDAYS_COUNT:
+        upcoming_mondays.append(curr)
+        curr += timedelta(days=7)
+        
+    return [d.strftime("%Y-%m-%d") for d in (past_mondays + upcoming_mondays)]
+
+
+def get_upcoming_mondays(ref_date=None):
+    """Compatibility wrapper returning get_selectable_mondays()."""
+    return get_selectable_mondays(ref_date)
 
 
 def make_batch_label(joining_date_str):
-    """Convert '2026-07-21' â†’ '21 Jul 2026 Batch'"""
+    """Convert '2026-07-21' → '21 Jul 2026 Batch'"""
     try:
         d = datetime.strptime(joining_date_str, "%Y-%m-%d")
         return d.strftime("%-d %b %Y Batch")
@@ -1001,13 +1011,11 @@ def make_batch_label(joining_date_str):
 
 
 def validate_joining_date(joining_date_str, allow_past_for_backfill=False):
-    """Validate that joining_date is a Monday, <= 31 Dec 2026, not in the past,
-    AND is one of the currently-available joining Mondays (next 3).
-    allow_past_for_backfill=True (Track 6 addendum, admin-only bulk-accept import):
-    still requires a real Monday and skips the not-in-the-past / must-be-upcoming
-    checks, for backfilling interns whose real joining date has already occurred.
-    Default False preserves the original behavior for every other caller
-    (the interactive self-serve enrollment flow)."""
+    """Validate that joining_date is a Monday, <= 31 Dec 2026,
+    AND is one of the currently-selectable Mondays (last 2 Mondays + next 3 upcoming).
+    allow_past_for_backfill=True (admin-only bulk-accept import):
+    still requires a real Monday <= 31 Dec 2026 and skips the selectable check.
+    Default False validates against get_selectable_mondays()."""
     try:
         d = datetime.strptime(joining_date_str, "%Y-%m-%d").date()
     except Exception:
@@ -1018,10 +1026,8 @@ def validate_joining_date(joining_date_str, allow_past_for_backfill=False):
         return False, "Joining date must be on or before 31 Dec 2026."
     if allow_past_for_backfill:
         return True, ""
-    if d < date.today():
-        return False, "Joining date cannot be in the past."
-    if joining_date_str not in get_upcoming_mondays():
-        return False, "Please choose one of the available joining Mondays."
+    if joining_date_str not in get_selectable_mondays():
+        return False, "Please choose one of the available joining Mondays (last 2 Mondays or upcoming Mondays)."
     return True, ""
 
 
@@ -1039,10 +1045,11 @@ def auto_assign_joining_date_on_accept(conn, app_row):
     existing = conn.execute("SELECT joining_date FROM enrollments WHERE email=? LIMIT 1", (email,)).fetchone()
     if existing:
         return existing["joining_date"]
-    mondays = get_upcoming_mondays()
-    if not mondays:
+    all_mondays = get_selectable_mondays()
+    if not all_mondays:
         return None  # e.g. past the enrollment deadline -- nothing sensible to assign
-    joining_date = mondays[0]
+    future_mondays = [m for m in all_mondays if datetime.strptime(m, "%Y-%m-%d").date() >= date.today()]
+    joining_date = future_mondays[0] if future_mondays else all_mondays[-1]
     batch_label  = make_batch_label(joining_date)
     acct = conn.execute("SELECT * FROM intern_accounts WHERE email=? LIMIT 1", (email,)).fetchone()
     name            = acct["name"]            if acct else app_row["name"]
@@ -10311,6 +10318,10 @@ def enroll():
         if not valid:
             return jsonify({"status": "error", "message": err}), 400
 
+        chosen_domain = clean_text(request.form.get("domain"))
+        if chosen_domain and chosen_domain not in VALID_DOMAINS:
+            return jsonify({"status": "error", "message": "Invalid domain."}), 400
+
         if "payment_screenshot" not in request.files:
             return jsonify({"status": "error", "message": "Payment screenshot required."}), 400
         file = request.files["payment_screenshot"]
@@ -10335,11 +10346,19 @@ def enroll():
             if not acct:
                 return jsonify({"status": "error", "message": "Account not found."}), 404
             app_row = conn.execute(
-                "SELECT * FROM applications WHERE email=? AND status IN (?,?,?,?,?) ORDER BY id DESC LIMIT 1",
-                (email, STATUS_SELECTED, STATUS_ENROLLMENT_PENDING, STATUS_ENROLLED, STATUS_ACCEPTED, STATUS_PAID_ENROLLED)
+                "SELECT * FROM applications WHERE email=? AND status IN (?,?,?,?,?,?,?) ORDER BY id DESC LIMIT 1",
+                (email, STATUS_SELECTED, STATUS_ENROLLMENT_PENDING, STATUS_ENROLLED, STATUS_ACCEPTED, STATUS_PAID_ENROLLED, STATUS_UNDER_REVIEW, STATUS_APPLY_PENDING)
             ).fetchone()
             if not app_row:
                 return jsonify({"status": "error", "message": "Not eligible for enrollment yet."}), 400
+
+            domain_to_save = chosen_domain or (acct["domain"] if acct["domain"] and acct["domain"] != "Undeclared" else None) or (app_row["domain"] if app_row["domain"] and app_row["domain"] != "Undeclared" else None)
+            if not domain_to_save:
+                return jsonify({"status": "error", "message": "Please select your internship domain."}), 400
+
+            if chosen_domain:
+                conn.execute("UPDATE intern_accounts SET domain=?, updated_at=? WHERE id=?", (chosen_domain, now_str(), acct["id"]))
+                conn.execute("UPDATE applications SET domain=?, updated_at=? WHERE id=?", (chosen_domain, now_str(), app_row["id"]))
 
             existing = conn.execute("SELECT * FROM enrollments WHERE email=? LIMIT 1", (email,)).fetchone()
             if existing:
@@ -10348,7 +10367,7 @@ def enroll():
                     semester=?,year_of_passing=?,domain=?,joining_date=?,batch_label=?,payment_screenshot=?,
                     payment_status='Pending Verification',updated_at=? WHERE email=?
                 """, (app_row["id"], now_str(), acct["name"], acct["phone"], acct["city"], acct["college"],
-                      acct["course"], acct["semester"], acct["year_of_passing"], app_row["domain"],
+                      acct["course"], acct["semester"], acct["year_of_passing"], domain_to_save,
                       joining_date, batch_label, filename, now_str(), email))
             else:
                 conn.execute("""
@@ -10357,7 +10376,7 @@ def enroll():
                     year_of_passing,domain,joining_date,batch_label,payment_screenshot,payment_status,created_at,updated_at)
                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """, (app_row["id"], now_str(), acct["name"], email, acct["phone"], acct["city"], acct["college"],
-                      acct["course"], acct["semester"], acct["year_of_passing"], app_row["domain"],
+                      acct["course"], acct["semester"], acct["year_of_passing"], domain_to_save,
                       joining_date, batch_label, filename, "Pending Verification", now_str(), now_str()))
 
             old_status = app_row["status"]
@@ -10367,13 +10386,288 @@ def enroll():
                          (STATUS_ENROLLMENT_PENDING, now_str(), app_row["id"]))
             conn.commit()
 
-        send_enrollment_confirmation_email(acct["name"], email, app_row["domain"], joining_date)
+        send_enrollment_confirmation_email(acct["name"], email, domain_to_save, joining_date)
         if old_status != STATUS_ENROLLED:
-            send_status_update_email(acct["name"], email, app_row["domain"], STATUS_ENROLLED, "", joining_date)
+            send_status_update_email(acct["name"], email, domain_to_save, STATUS_ENROLLED, "", joining_date)
         return jsonify({"status": "success", "message": "Enrollment submitted successfully."})
     except Exception as e:
         log_error("enroll", e)
         return jsonify({"status": "error", "message": "Error"}), 500
+
+
+@app.route("/intern/wizard-status")
+def intern_wizard_status():
+    """Inspects intern profile for missing data (domain, joining_date, payment_screenshot, academic profile)
+    and returns an ordered list of steps for the interactive self-healing onboarding modal."""
+    try:
+        user = require_role("intern")
+        if not user:
+            return jsonify({"status": "error", "message": "Unauthorized"}), 401
+        email = user["email"].strip().lower()
+
+        with get_db() as conn:
+            acct = conn.execute(
+                "SELECT * FROM intern_accounts WHERE LOWER(email)=? AND is_active=1 LIMIT 1", (email,)
+            ).fetchone()
+            if not acct:
+                return jsonify({"status": "error", "message": "Account not found."}), 404
+
+            app_row = conn.execute(
+                "SELECT * FROM applications WHERE LOWER(email)=? ORDER BY id DESC LIMIT 1", (email,)
+            ).fetchone()
+
+            enr = conn.execute(
+                "SELECT * FROM enrollments WHERE LOWER(email)=? ORDER BY id DESC LIMIT 1", (email,)
+            ).fetchone()
+
+            missing_steps = []
+
+            # Step 1: Domain check
+            curr_domain = (acct["domain"] or "").strip()
+            enr_domain = (enr["domain"] or "").strip() if enr else ""
+
+            if (not curr_domain or curr_domain == "Undeclared") and (not enr_domain or enr_domain == "Undeclared"):
+                missing_steps.append({
+                    "key": "domain",
+                    "title": "Select Internship Domain",
+                    "subtitle": "Choose your primary specialization track to configure your syllabus, tasks, and certification.",
+                    "type": "domain_select",
+                    "current_value": curr_domain if curr_domain != "Undeclared" else "",
+                    "options": VALID_DOMAINS
+                })
+
+            # Step 2: Joining Date check
+            enr_joining = (enr["joining_date"] or "").strip() if enr else ""
+            if not enr_joining:
+                selectable = get_selectable_mondays()
+                missing_steps.append({
+                    "key": "joining_date",
+                    "title": "Choose Batch Joining Date",
+                    "subtitle": "Select your batch start date. You can select either of the last 2 Mondays (for immediate access) or an upcoming Monday.",
+                    "type": "joining_date_select",
+                    "current_value": enr_joining,
+                    "options": selectable,
+                    "labels": {
+                        selectable[0]: f"{make_batch_label(selectable[0])} (2 Weeks Ago - Instant Unlock)",
+                        selectable[1]: f"{make_batch_label(selectable[1])} (Last Monday - Instant Unlock)",
+                        selectable[2]: f"{make_batch_label(selectable[2])} (Next Batch)",
+                        selectable[3]: f"{make_batch_label(selectable[3])} (Upcoming Batch)",
+                        selectable[4]: f"{make_batch_label(selectable[4])} (Upcoming Batch)" if len(selectable) > 4 else ""
+                    }
+                })
+
+            # Step 3: Payment Screenshot check
+            has_receipt = bool(enr and (enr["payment_screenshot"] or "").strip())
+            is_rejected_receipt = bool(enr and enr["payment_status"] == "Rejected")
+            is_accepted = bool((enr and enr["payment_status"] == "Accepted") or (app_row and app_row["status"] == STATUS_ACCEPTED))
+            
+            # Show deposit proof step if not already confirmed accepted and lacking verified receipt
+            if not is_accepted and (not has_receipt or is_rejected_receipt):
+                missing_steps.append({
+                    "key": "payment_screenshot",
+                    "title": "Upload ₹499 Refundable Deposit Proof",
+                    "subtitle": "Secure your seat with a fully refundable deposit. Pay via UPI and upload your receipt screenshot.",
+                    "type": "file_upload",
+                    "upi_id": "Q681021429@ybl",
+                    "amount": 499,
+                    "is_rejected": is_rejected_receipt
+                })
+
+            # Step 4: Academic Profile check
+            college = (acct["college"] or "").strip()
+            course = (acct["course"] or "").strip()
+            year = (acct["year_of_passing"] or "").strip()
+            city = (acct["city"] or "").strip()
+
+            if not college or college.lower() in ("n/a", "none", "unknown", "") or not course or course.lower() in ("n/a", "none", ""):
+                missing_steps.append({
+                    "key": "academic_profile",
+                    "title": "Confirm Academic Profile",
+                    "subtitle": "Ensure your college name and degree course are on record for your official offer letter and certificate.",
+                    "type": "profile_form",
+                    "fields": {
+                        "college": college if college.lower() not in ("n/a", "none", "unknown") else "",
+                        "course": course if course.lower() not in ("n/a", "none") else "",
+                        "year_of_passing": year,
+                        "city": city
+                    }
+                })
+
+            return jsonify({
+                "status": "success",
+                "needs_completion": len(missing_steps) > 0,
+                "total_steps": len(missing_steps),
+                "steps": missing_steps
+            })
+    except Exception as e:
+        log_error("intern-wizard-status", e)
+        return jsonify({"status": "error", "message": "Error inspecting profile."}), 500
+
+
+@app.route("/intern/save-wizard-step", methods=["POST"])
+def intern_save_wizard_step():
+    """Atomically saves an individual onboarding wizard step (domain, joining_date, payment_screenshot, academic_profile)
+    into the database across intern_accounts, applications, and enrollments."""
+    try:
+        user = require_role("intern")
+        if not user:
+            return jsonify({"status": "error", "message": "Unauthorized"}), 401
+        email = user["email"].strip().lower()
+
+        ip = get_client_ip()
+        allowed, ra = rate_check(f"wizard:ip:{ip}", 40, 60)
+        if not allowed:
+            return too_many(ra)
+
+        step_key = clean_text(request.form.get("step_key") or ((request.is_json and request.get_json(silent=True)) or {}).get("step_key"))
+        if not step_key:
+            return jsonify({"status": "error", "message": "step_key required."}), 400
+
+        with get_db() as conn:
+            acct = conn.execute(
+                "SELECT * FROM intern_accounts WHERE LOWER(email)=? AND is_active=1 LIMIT 1", (email,)
+            ).fetchone()
+            if not acct:
+                return jsonify({"status": "error", "message": "Account not found."}), 404
+
+            app_row = conn.execute(
+                "SELECT * FROM applications WHERE LOWER(email)=? ORDER BY id DESC LIMIT 1", (email,)
+            ).fetchone()
+
+            enr = conn.execute(
+                "SELECT * FROM enrollments WHERE LOWER(email)=? ORDER BY id DESC LIMIT 1", (email,)
+            ).fetchone()
+
+            if step_key == "domain":
+                val = clean_text(request.form.get("value") or ((request.is_json and request.get_json(silent=True)) or {}).get("value"))
+                if val not in VALID_DOMAINS:
+                    return jsonify({"status": "error", "message": f"Invalid domain. Choose from: {', '.join(VALID_DOMAINS)}"}), 400
+
+                conn.execute("UPDATE intern_accounts SET domain=?, updated_at=? WHERE id=?", (val, now_str(), acct["id"]))
+                if app_row:
+                    conn.execute("UPDATE applications SET domain=?, updated_at=? WHERE id=?", (val, now_str(), app_row["id"]))
+                if enr:
+                    conn.execute("UPDATE enrollments SET domain=?, updated_at=? WHERE id=?", (val, now_str(), enr["id"]))
+                conn.commit()
+                return jsonify({"status": "success", "message": "Domain updated successfully.", "domain": val})
+
+            elif step_key == "joining_date":
+                val = clean_text(request.form.get("value") or ((request.is_json and request.get_json(silent=True)) or {}).get("value"))
+                valid, err = validate_joining_date(val)
+                if not valid:
+                    return jsonify({"status": "error", "message": err}), 400
+
+                batch_label = make_batch_label(val)
+                domain = (acct["domain"] if acct["domain"] and acct["domain"] != "Undeclared" else None) or \
+                         (app_row["domain"] if app_row and app_row["domain"] and app_row["domain"] != "Undeclared" else "AI Agent Development")
+
+                if enr:
+                    conn.execute("""
+                        UPDATE enrollments
+                        SET joining_date=?, batch_label=?, updated_at=?
+                        WHERE id=?
+                    """, (val, batch_label, now_str(), enr["id"]))
+                else:
+                    app_id = app_row["id"] if app_row else None
+                    conn.execute("""
+                        INSERT INTO enrollments
+                        (application_id, timestamp, name, email, phone, city, college, course, semester,
+                         year_of_passing, domain, joining_date, batch_label, payment_screenshot,
+                         payment_status, created_at, updated_at)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    """, (app_id, now_str(), acct["name"], email, acct["phone"], acct["city"], acct["college"],
+                          acct["course"], acct["semester"], acct["year_of_passing"], domain,
+                          val, batch_label, "", "Pending Verification", now_str(), now_str()))
+                conn.commit()
+                return jsonify({"status": "success", "message": "Joining date updated successfully.", "joining_date": val, "batch_label": batch_label})
+
+            elif step_key == "payment_screenshot":
+                if "payment_screenshot" not in request.files:
+                    return jsonify({"status": "error", "message": "Payment screenshot required."}), 400
+                file = request.files["payment_screenshot"]
+                if not file or not file.filename:
+                    return jsonify({"status": "error", "message": "Payment screenshot required."}), 400
+                if not allowed_file(file.filename):
+                    return jsonify({"status": "error", "message": "Allowed: png, jpg, jpeg, pdf"}), 400
+                sniffed = sniff_upload_type(file)
+                if sniffed is None:
+                    log_abuse(ip, "/intern/save-wizard-step", "wizard:upload", "bad_magic", email)
+                    return jsonify({"status": "error", "message": "File must be a real PNG, JPEG, or PDF."}), 400
+
+                filename = f"{uuid.uuid4().hex}.{sniffed}"
+                file.save(os.path.join(app.config["UPLOAD_FOLDER"], filename))
+
+                domain = (acct["domain"] if acct["domain"] and acct["domain"] != "Undeclared" else None) or \
+                         (app_row["domain"] if app_row and app_row["domain"] and app_row["domain"] != "Undeclared" else "AI Agent Development")
+
+                if enr:
+                    conn.execute("""
+                        UPDATE enrollments
+                        SET payment_screenshot=?, payment_status='Pending Verification', updated_at=?
+                        WHERE id=?
+                    """, (filename, now_str(), enr["id"]))
+                else:
+                    mondays = get_selectable_mondays()
+                    default_monday = mondays[1]
+                    batch_label = make_batch_label(default_monday)
+                    app_id = app_row["id"] if app_row else None
+                    conn.execute("""
+                        INSERT INTO enrollments
+                        (application_id, timestamp, name, email, phone, city, college, course, semester,
+                         year_of_passing, domain, joining_date, batch_label, payment_screenshot,
+                         payment_status, created_at, updated_at)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    """, (app_id, now_str(), acct["name"], email, acct["phone"], acct["city"], acct["college"],
+                          acct["course"], acct["semester"], acct["year_of_passing"], domain,
+                          default_monday, batch_label, filename, "Pending Verification", now_str(), now_str()))
+
+                if app_row and app_row["status"] in (STATUS_UNDER_REVIEW, STATUS_APPLY_PENDING, STATUS_SELECTED):
+                    conn.execute("UPDATE applications SET status=?, updated_at=? WHERE id=?",
+                                 (STATUS_ENROLLMENT_PENDING, now_str(), app_row["id"]))
+
+                conn.commit()
+                return jsonify({"status": "success", "message": "Receipt uploaded successfully.", "filename": filename})
+
+            elif step_key == "academic_profile":
+                payload = request.get_json(silent=True) if request.is_json else request.form
+                college = clean_text(payload.get("college"))
+                course = clean_text(payload.get("course"))
+                year = clean_text(payload.get("year_of_passing"))
+                city = clean_text(payload.get("city"))
+
+                if not college or len(college) < 2:
+                    return jsonify({"status": "error", "message": "Please enter your college name."}), 400
+                if not course:
+                    return jsonify({"status": "error", "message": "Please enter your course / degree."}), 400
+
+                conn.execute("""
+                    UPDATE intern_accounts
+                    SET college=?, course=?, year_of_passing=?, city=?, updated_at=?
+                    WHERE id=?
+                """, (college, course, year, city, now_str(), acct["id"]))
+
+                if app_row:
+                    conn.execute("""
+                        UPDATE applications
+                        SET college=?, course=?, year_of_passing=?, city=?, updated_at=?
+                        WHERE id=?
+                    """, (college, course, year, city, now_str(), app_row["id"]))
+
+                if enr:
+                    conn.execute("""
+                        UPDATE enrollments
+                        SET college=?, course=?, year_of_passing=?, city=?, updated_at=?
+                        WHERE id=?
+                    """, (college, course, year, city, now_str(), enr["id"]))
+
+                conn.commit()
+                return jsonify({"status": "success", "message": "Academic details saved."})
+
+            else:
+                return jsonify({"status": "error", "message": f"Unknown step_key: {step_key}"}), 400
+    except Exception as e:
+        log_error("intern-save-wizard-step", e)
+        return jsonify({"status": "error", "message": "Error saving step."}), 500
 
 
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
