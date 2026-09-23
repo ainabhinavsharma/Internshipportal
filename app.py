@@ -10468,7 +10468,7 @@ def intern_wizard_status():
                     "title": "Upload ₹499 Refundable Deposit Proof",
                     "subtitle": "Secure your seat with a fully refundable deposit. Pay via UPI and upload your receipt screenshot.",
                     "type": "file_upload",
-                    "upi_id": "Q681021429@ybl",
+                    "upi_id": UPI_ID,
                     "amount": 499,
                     "is_rejected": is_rejected_receipt
                 })

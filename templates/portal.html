@@ -115,7 +115,7 @@
             <li><i class="fas fa-rotate-left"></i><span>Your <strong>&#8377;499 deposit is fully refundable</strong> on successful completion.</span></li>
           </ul>
           <div class="upi-card">
-            <div class="upi-qr"><img src="/static/qr.jpg" alt="UPI QR" data-act-error="$hideParent"/></div>
+            <div class="upi-qr"><img src="/static/img/qrcode.jpeg" alt="UPI QR" onerror="this.onerror=null;this.src='/static/qr.jpg';" /></div>
             <div class="upi-info">
               <p>Scan QR or pay to UPI ID:</p>
               <div class="upi-id-box"><span id="upiIdDisplay">Q681021429@ybl</span><button data-act-click="copyUPI" aria-label="Copy UPI"><i class="fas fa-copy"></i></button></div>
@@ -179,7 +179,7 @@
           <h3 style="color:var(--tx-head);font-size:16px;font-weight:800;margin-bottom:16px;"><i class="fas fa-lock" style="color:var(--green);margin-right:8px;"></i>Secure Your Role &mdash; &#8377;499 Refundable Deposit</h3>
           <p id="jdIntro" style="color:var(--tx-muted);font-size:13.5px;margin-bottom:14px;"></p>
           <div class="upi-card" id="jdUpiCard">
-            <div class="upi-qr"><img src="/static/qr.jpg" alt="UPI QR" data-act-error="$hideParent"/></div>
+            <div class="upi-qr"><img src="/static/img/qrcode.jpeg" alt="UPI QR" onerror="this.onerror=null;this.src='/static/qr.jpg';" /></div>
             <div class="upi-info">
               <p>Scan QR or pay to UPI ID:</p>
               <div class="upi-id-box"><span id="jdUpiIdDisplay">Q681021429@ybl</span><button data-act-click="copyUPI" aria-label="Copy UPI"><i class="fas fa-copy"></i></button></div>
@@ -1284,17 +1284,25 @@
       body.innerHTML = `
         ${rejNotice}
         <div style="background:rgba(226,185,111,0.06);border:1px solid rgba(226,185,111,0.2);border-radius:var(--r-sm);padding:14px 16px;margin-bottom:16px;">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-            <span style="font-size:13px;color:var(--tx-muted);">Refundable Security Deposit:</span>
-            <strong style="color:var(--gold);font-size:18px;">₹${amt}</strong>
+          <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
+            <div style="background:#fff;padding:6px;border-radius:10px;display:flex;align-items:center;justify-content:center;width:120px;height:120px;flex-shrink:0;margin:0 auto;box-shadow:0 4px 14px rgba(0,0,0,0.3);border:1px solid rgba(226,185,111,0.3);">
+              <img src="/static/img/qrcode.jpeg" alt="UPI QR Code" style="width:100%;height:100%;object-fit:contain;border-radius:6px;" onerror="this.onerror=null;this.src='/static/qr.jpg';" />
+            </div>
+            <div style="flex:1;min-width:210px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                <span style="font-size:12.5px;color:var(--tx-muted);">Refundable Security Deposit:</span>
+                <strong style="color:var(--gold);font-size:17px;">₹${amt}</strong>
+              </div>
+              <p style="font-size:11.5px;color:var(--tx-muted);margin:0 0 8px;">Scan with PhonePe, GPay, Paytm or copy UPI:</p>
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;background:rgba(0,0,0,0.35);padding:6px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.08);">
+                <code style="color:#fff;font-size:12.5px;font-weight:700;">${escHtml(upi)}</code>
+                <button type="button" class="btn btn-secondary btn-sm" ${actAttr('click', 'copyUpiWizard', [upi])} style="padding:4px 10px;font-size:11.5px;">
+                  <i class="fas fa-copy"></i> Copy
+                </button>
+              </div>
+              <p style="font-size:11px;color:#4ade80;margin:8px 0 0;"><i class="fas fa-shield-alt"></i> 100% Refundable upon internship completion</p>
+            </div>
           </div>
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:rgba(0,0,0,0.25);padding:8px 12px;border-radius:6px;">
-            <code style="color:#fff;font-size:13px;font-weight:700;">${escHtml(upi)}</code>
-            <button type="button" class="btn btn-secondary btn-sm" ${actAttr('click', 'copyUpiWizard', [upi])} style="padding:4px 10px;font-size:11.5px;">
-              <i class="fas fa-copy"></i> Copy UPI
-            </button>
-          </div>
-          <p style="font-size:11.5px;color:var(--tx-muted);margin:8px 0 0;"><i class="fas fa-shield-alt" style="color:#4ade80;"></i> 100% Refundable upon internship completion.</p>
         </div>
 
         <div style="border:2px dashed var(--border);border-radius:var(--r-md);padding:24px 16px;text-align:center;cursor:pointer;background:rgba(255,255,255,0.02);transition:border-color .2s;" ${actAttr('click', 'triggerWizardFileInput', [])}>
