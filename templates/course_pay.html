@@ -46,7 +46,7 @@
         </div>
 
       {% else %}
-        <img class="qr-code" src="/static/qr.jpg" alt="UPI QR code" data-act-error="$hide">
+        <img class="qr-code" src="/static/img/qrcode.jpeg" alt="UPI QR code" onerror="this.onerror=null;this.src='/static/qr.jpg';" data-act-error="$hide">
         <p class="t-sm t-muted t-center">Scan the QR or pay ₹{{ course.price_inr | formatINR }} to:</p>
         <div class="upi-chip">{{ upi_id }}</div>
 

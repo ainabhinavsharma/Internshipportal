@@ -1031,6 +1031,386 @@ def validate_joining_date(joining_date_str, allow_past_for_backfill=False):
     return True, ""
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# Standardized 5-Stage Intern Lifecycle State Machine
+# Stage 1: APPLICATION_REQUIRED -> User signed up, needs domain/profile application
+# Stage 2: UNDER_REVIEW          -> Application submitted, waiting for Admin approval
+# Stage 3: SELECTED              -> Admin approved application, waiting for deposit upload
+# Stage 4: PAYMENT_PENDING       -> Deposit receipt uploaded, waiting for Admin verification
+# Stage 5: CONFIRMED             -> Payment verified and accepted by Admin (Accepted)
+# ══════════════════════════════════════════════════════════════════════════════
+STAGE_APP_REQUIRED     = "APPLICATION_REQUIRED"
+STAGE_UNDER_REVIEW     = "UNDER_REVIEW"
+STAGE_SELECTED         = "SELECTED"
+STAGE_PAYMENT_PENDING  = "PAYMENT_PENDING"
+STAGE_CONFIRMED        = "CONFIRMED"
+STAGE_REJECTED         = "REJECTED"
+
+PLATFORM_DOMAIN_COURSES = [
+    {
+        "domain": "AI Agent Development",
+        "title": "Autonomous AI Agents & Large Language Model Engineering",
+        "slug": "ai-agent-development",
+        "level": "Intermediate",
+        "estimated_hours": 12,
+        "banner_gradient": "linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4338ca 100%)",
+        "chapters": [
+            {
+                "day_number": 1,
+                "title": "Foundations & LLM Architecture",
+                "subtopics": [
+                    ("Core Architecture & Generative Syntax", "Master LLM fundamentals, tokenizer mechanics, and execution environment setup.", ["Dynamic prompting & context window management", "Clean modular agent structure", "Isolated environment configuration"]),
+                    ("Prompt Engineering & Structured Outputs", "Design system instructions, few-shot prompts, and JSON schema enforcement.", ["System instructions & few-shot framing", "Structured JSON output extraction", "Model response parsing and validation"])
+                ],
+                "quiz": [
+                    {"id": 1, "question": "What is the primary role of a system prompt in LLM agent architecture?", "options": ["Define persistent persona, constraints, and instructions", "Increase hardware clock speed", "Compress disk storage", "Bypass token context limits"], "correct_index": 0},
+                    {"id": 2, "question": "Why is structured JSON output critical when building agentic workflows?", "options": ["Enables reliable deterministic programmatic parsing", "Reduces server memory to zero", "Eliminates need for any API keys", "Increases model parameters dynamically"], "correct_index": 0}
+                ]
+            },
+            {
+                "day_number": 2,
+                "title": "Agentic Tool Calling & Reasoning Loops",
+                "subtopics": [
+                    ("Function Calling & External API Tools", "Equip models with dynamic tools and real-time execution capabilities.", ["OpenAPI/Pydantic tool schema definition", "Deterministic argument validation", "Secure runtime function execution"]),
+                    ("Autonomous ReAct & Multi-Agent Orchestration", "Construct goal-directed planning loops and cooperative agent patterns.", ["ReAct loop implementation (Reason, Act, Observe)", "Multi-agent task decomposition", "State preservation across agent iterations"])
+                ],
+                "quiz": [
+                    {"id": 1, "question": "What sequence defines the ReAct framework in autonomous agents?", "options": ["Reasoning, Acting, and Observing", "Randomizing, Compiling, and Terminating", "Recursive Evaluation and Automated Typing", "Rebooting, Authenticating, and Caching"], "correct_index": 0},
+                    {"id": 2, "question": "How do tool schemas prevent hallucinated API arguments?", "options": ["By enforcing strict JSON schema parameter types and validations", "By turning off LLM attention layers", "By restarting the server on invalid tokens", "By running code in a separate process only"], "correct_index": 0}
+                ]
+            },
+            {
+                "day_number": 3,
+                "title": "Production Deployment & Capstone",
+                "subtopics": [
+                    ("Agent Evaluation & Safety Guardrails", "Evaluate agent output reliability, safety guardrails, and error recovery.", ["Automated evaluation benchmarks", "Input sanitation & prompt injection prevention", "Self-healing fallback patterns"]),
+                    ("Capstone AI Assistant Deployment", "Build, containerize, and deploy a production-grade autonomous agent.", ["End-to-end multi-agent pipeline", "Asynchronous streaming endpoint integration", "Cloud deployment & observability metrics"])
+                ],
+                "quiz": [
+                    {"id": 1, "question": "Which security measure guards against indirect prompt injection?", "options": ["Sanitizing untrusted external data and strict context delimiters", "Disabling HTTPS encryption", "Increasing temperature to 1.0", "Removing all system instructions"], "correct_index": 0},
+                    {"id": 2, "question": "What metric is most vital for evaluating production agent reliability?", "options": ["Task completion accuracy and tool call success rate", "Length of generated text output", "Number of background threads spawned", "Size of the database cache file"], "correct_index": 0}
+                ]
+            }
+        ]
+    },
+    {
+        "domain": "Data Analyst",
+        "title": "Data Analytics, Visualization & Predictive Modeling",
+        "slug": "data-analytics",
+        "level": "Beginner",
+        "estimated_hours": 12,
+        "banner_gradient": "linear-gradient(135deg, #064e3b 0%, #065f46 50%, #047857 100%)",
+        "chapters": [
+            {
+                "day_number": 1,
+                "title": "Data Wrangling & Statistical Foundations",
+                "subtopics": [
+                    ("Data Cleaning & Exploration with Pandas", "Clean messy datasets, handle missing values, and structure relational tables.", ["DataFrame indexing, filtering & grouping", "Handling outliers & missing entries", "Vectorized transformations"]),
+                    ("Relational SQL for Business Analytics", "Query structured databases with advanced joins, aggregations, and window functions.", ["Complex JOIN queries & aggregations", "Window functions (RANK, ROW_NUMBER)", "Analytical KPI metric generation"])
+                ],
+                "quiz": [
+                    {"id": 1, "question": "Which SQL clause allows computing running totals or rankings across a partitioned dataset?", "options": ["OVER (PARTITION BY ... ORDER BY ...)", "GROUP BY ROLLUP", "HAVING COUNT > 1", "WHERE ROWNUM <= 10"], "correct_index": 0},
+                    {"id": 2, "question": "In pandas, what is the best practice for handling missing numerical values before statistical modeling?", "options": ["Impute using median/mean or domain-specific interpolation", "Replace all values with arbitrary negative numbers", "Duplicate the preceding non-null row repeatedly", "Ignore them and proceed without inspection"], "correct_index": 0}
+                ]
+            },
+            {
+                "day_number": 2,
+                "title": "Visual Storytelling & Dashboarding",
+                "subtopics": [
+                    ("Interactive Visualizations & Matplotlib/Seaborn", "Create publication-quality charts and exploratory visual dashboards.", ["Distribution plots, heatmaps & trend lines", "Perceptual color design principles", "Exploratory multivariate analysis"]),
+                    ("Business Intelligence & KPI Dashboards", "Design actionable operational metrics and executive business summaries.", ["Conversion funnels & cohort retention", "Executive KPI scorecard generation", "Data storytelling & insights presentation"])
+                ],
+                "quiz": [
+                    {"id": 1, "question": "When visualizing the distribution of a continuous numeric variable, which chart is most informative?", "options": ["Histogram or Kernel Density Estimation (KDE) plot", "3D Pie Chart", "Spider Radar Plot", "Stacked Gauge Meter"], "correct_index": 0},
+                    {"id": 2, "question": "What is the primary objective of cohort retention analysis?", "options": ["Measure user engagement patterns over time across signup cohorts", "Calculate total server CPU utilization", "Estimate raw database row storage", "Identify database index fragmentation"], "correct_index": 0}
+                ]
+            },
+            {
+                "day_number": 3,
+                "title": "Predictive Modeling & Capstone Analytics",
+                "subtopics": [
+                    ("Predictive Trends & Statistical Inference", "Apply linear regression, hypothesis testing, and forecasting models.", ["Statistical hypothesis testing (p-values, z-scores)", "Regression modeling & coefficient interpretation", "Time-series trend forecasting"]),
+                    ("End-to-End Analytics Capstone Project", "Synthesize a full corporate dataset into actionable strategic insights.", ["Raw data ingestion to analytical pipeline", "Executive report & visualization deck", "Actionable recommendations summary"])
+                ],
+                "quiz": [
+                    {"id": 1, "question": "What does a p-value less than 0.05 typically indicate in hypothesis testing?", "options": ["Statistically significant evidence against the null hypothesis", "The model has 95% training accuracy", "Data was corrupted during collection", "The null hypothesis must be unconditionally accepted"], "correct_index": 0},
+                    {"id": 2, "question": "In business analytics, what distinguishes an actionable insight from a descriptive statistic?", "options": ["It prescribes a concrete decision or behavioral change that impacts business KPIs", "It contains more decimal places", "It is always rendered in a pie chart", "It requires at least one gigabyte of data"], "correct_index": 0}
+                ]
+            }
+        ]
+    },
+    {
+        "domain": "Full Stack Development",
+        "title": "Full Stack Web Application Engineering",
+        "slug": "full-stack-development",
+        "level": "Intermediate",
+        "estimated_hours": 15,
+        "banner_gradient": "linear-gradient(135deg, #1e293b 0%, #0f172a 50%, #334155 100%)",
+        "chapters": [
+            {
+                "day_number": 1,
+                "title": "Modern Frontend & Component Architecture",
+                "subtopics": [
+                    ("Responsive UI & Modern DOM Architecture", "Design accessible, responsive web interfaces with modern CSS and JavaScript.", ["Mobile-first responsive layouts & Flexbox/Grid", "DOM manipulation & event-driven UI", "Component state lifecycle"]),
+                    ("Dynamic Client-Side Application State", "Manage asynchronous API requests, data stores, and client reactivity.", ["Fetch API, error handling & loading states", "Client-side validation & form security", "Modular JavaScript ES6+ patterns"])
+                ],
+                "quiz": [
+                    {"id": 1, "question": "What is the primary benefit of mobile-first CSS media queries?", "options": ["Provides progressive enhancement and faster mobile loading", "Disables desktop viewports entirely", "Eliminates need for any JavaScript code", "Compresses image assets automatically"], "correct_index": 0},
+                    {"id": 2, "question": "How should asynchronous API errors be handled on the client UI?", "options": ["Catch errors gracefully and present clear, actionable user feedback", "Silently discard the error and freeze the UI", "Force a full browser refresh on any 4xx status", "Display raw backend stack traces in alerts"], "correct_index": 0}
+                ]
+            },
+            {
+                "day_number": 2,
+                "title": "Backend Engineering & API Security",
+                "subtopics": [
+                    ("RESTful APIs, Routing & Controller Design", "Build robust backend endpoints, request sanitization, and structured responses.", ["REST architectural principles & HTTP methods", "Input validation & error handling middleware", "Session management & JWT authentication"]),
+                    ("Database Design, ORM & ACID Transactions", "Design normalized relational schemas with transactions and indexing.", ["Relational schema design & foreign keys", "Atomic database transactions & locking", "Query optimization & indexing"])
+                ],
+                "quiz": [
+                    {"id": 1, "question": "What HTTP method should be used for an idempotent resource update in a RESTful API?", "options": ["PUT", "POST", "CONNECT", "TRACE"], "correct_index": 0},
+                    {"id": 2, "question": "Which database property ensures partial transactions are rolled back upon an error?", "options": ["Atomicity", "Durability", "Consensus", "Distribution"], "correct_index": 0}
+                ]
+            },
+            {
+                "day_number": 3,
+                "title": "Full Stack Integration & Production Deployment",
+                "subtopics": [
+                    ("Security Hardening & Production Operations", "Implement rate limiting, CSRF protection, CSP headers, and CORS.", ["Protection against XSS, SQLi & CSRF", "Content Security Policy & secure headers", "Rate limiting & brute-force defense"]),
+                    ("Capstone Web Application Deployment", "Deploy a complete production-grade web application to live infrastructure.", ["WSGI/Gunicorn & Nginx reverse proxy configuration", "Environment variable secret management", "Continuous monitoring & health check endpoints"])
+                ],
+                "quiz": [
+                    {"id": 1, "question": "Why should database credentials and API secrets never be committed to Git repositories?", "options": ["They expose production systems to unauthorized access and credential leakage", "Git repositories reject files with sensitive keys", "It slows down git commit execution time", "It prevents Python from compiling bytecode"], "correct_index": 0},
+                    {"id": 2, "question": "What role does a reverse proxy like Nginx perform in front of Gunicorn/WSGI?", "options": ["Handles SSL termination, static file caching, and request buffering", "Compiles Python code into C binaries", "Generates database migration files", "Provides in-memory caching only"], "correct_index": 0}
+                ]
+            }
+        ]
+    },
+    {
+        "domain": "Python Automation",
+        "title": "Python Automation, Scripting & ETL Pipelines",
+        "slug": "python-automation",
+        "level": "Beginner",
+        "estimated_hours": 10,
+        "banner_gradient": "linear-gradient(135deg, #1e3a8a 0%, #1e40af 50%, #2563eb 100%)",
+        "chapters": [
+            {
+                "day_number": 1,
+                "title": "Scripting, File I/O & System Automation",
+                "subtopics": [
+                    ("File System, Pathlib & OS Automation", "Automate file organization, batch processing, and system operations.", ["Automated directory scanning & file parsing", "Regex pattern matching for data extraction", "System process execution with subprocess"]),
+                    ("CSV, JSON & Excel Spreadsheet Processing", "Read, transform, and generate structured data reports automatically.", ["Parsing & manipulating nested JSON payloads", "Automating Excel workbooks with openpyxl", "Automated email notifications & alerts"])
+                ],
+                "quiz": [
+                    {"id": 1, "question": "Why is pathlib.Path preferred over manual string concatenation for file paths in Python?", "options": ["Ensures cross-platform path compatibility between Windows and POSIX systems", "Loads files into RAM twice as fast", "Encrypts file contents by default", "Eliminates file permission requirements"], "correct_index": 0},
+                    {"id": 2, "question": "What is the safest way to execute external shell commands from Python scripts?", "options": ["subprocess.run with arguments passed as a list and shell=False", "os.system with raw unescaped input strings", "eval() on incoming string commands", "Writing commands directly to stdout"], "correct_index": 0}
+                ]
+            },
+            {
+                "day_number": 2,
+                "title": "Web Scraping & API Automation",
+                "subtopics": [
+                    ("Automated Web Scraping with BeautifulSoup", "Extract real-time web data and parse HTML documents reliably.", ["HTTP request headers & session persistence", "CSS selector parsing & text extraction", "Handling pagination & dynamic rate limits"]),
+                    ("RESTful API Integration & Webhooks", "Integrate third-party web services and process automated webhooks.", ["Authentication with API keys & OAuth tokens", "Payload serialization & webhook listeners", "Robust retry logic with exponential backoff"])
+                ],
+                "quiz": [
+                    {"id": 1, "question": "Why should web scraping scripts include custom User-Agent headers and rate delays?", "options": ["To identify client requests responsibly and avoid triggering rate-limiting blocks", "To make HTTP requests completely anonymous", "To bypass HTTPS TLS verification", "To compress HTML responses automatically"], "correct_index": 0},
+                    {"id": 2, "question": "What strategy handles intermittent network failures when calling external APIs?", "options": ["Exponential backoff with randomized jitter and retry limits", "Infinite immediate while-loops without delay", "Crashing the script and restarting the host machine", "Switching to raw UDP sockets"], "correct_index": 0}
+                ]
+            },
+            {
+                "day_number": 3,
+                "title": "Automated ETL Pipelines & Scheduling",
+                "subtopics": [
+                    ("Building Resilient ETL Data Pipelines", "Extract, transform, and load datasets with automated validation and logging.", ["ETL architecture & idempotent pipeline design", "Structured logging & error notification hooks", "Data integrity validation & deduplication"]),
+                    ("Capstone Scheduled Automation Service", "Deploy an autonomous task scheduler that runs unattended background jobs.", ["Cron & background task orchestration", "Daemonized worker execution with systemd", "Failure recovery & audit reporting"])
+                ],
+                "quiz": [
+                    {"id": 1, "question": "What does idempotency mean in an automated ETL pipeline?", "options": ["Re-running the pipeline multiple times produces the exact same state without duplicate records", "The pipeline only executes once in its entire lifetime", "The pipeline runs exclusively on GPU clusters", "Data is deleted after each successful read"], "correct_index": 0},
+                    {"id": 2, "question": "How should unattended background automation jobs log errors for production monitoring?", "options": ["Write structured logs (JSON/timestamp) and dispatch critical failure alerts", "Print raw error messages to /dev/null", "Suppress all exceptions silently", "Store logs exclusively in temporary browser localStorage"], "correct_index": 0}
+                ]
+            }
+        ]
+    }
+]
+
+
+def auto_enroll_intern_in_domain_courses(conn, intern_id, domain):
+    """Automatically enrolls an intern into the active course(s) for their domain."""
+    if not intern_id or not domain or domain not in VALID_DOMAINS:
+        return 0
+    courses = conn.execute(
+        "SELECT id FROM courses WHERE domain=? AND is_active=1", (domain,)
+    ).fetchall()
+    enrolled_count = 0
+    for c in courses:
+        res = conn.execute("""
+            INSERT OR IGNORE INTO course_enrollments (intern_id, course_id, enrolled_at, last_accessed_at, current_day)
+            VALUES (?, ?, ?, ?, 1)
+        """, (intern_id, c["id"], now_str(), now_str()))
+        if res.rowcount > 0:
+            enrolled_count += 1
+    return enrolled_count
+
+
+def get_intern_flow_state(conn, email):
+    """Evaluates the exact 5-stage lifecycle state for any intern dynamically:
+    Stage 1: APPLICATION_REQUIRED (no application or undeclared domain)
+    Stage 2: UNDER_REVIEW (application submitted, pending admin approval)
+    Stage 3: SELECTED (admin approved application, waiting for ₹499 deposit payment)
+    Stage 4: PAYMENT_PENDING (payment receipt uploaded, pending admin verification)
+    Stage 5: CONFIRMED (payment verified and accepted by admin)
+    Returns: dict with stage, stage_num, label, acct, app_row, enr, is_accepted, can_upload_payment, domain
+    """
+    email_clean = (email or "").strip().lower()
+    acct = conn.execute(
+        "SELECT * FROM intern_accounts WHERE LOWER(email)=? AND is_active=1 LIMIT 1", (email_clean,)
+    ).fetchone()
+
+    app_row = conn.execute(
+        "SELECT * FROM applications WHERE LOWER(email)=? ORDER BY id DESC LIMIT 1", (email_clean,)
+    ).fetchone()
+
+    enr = conn.execute(
+        "SELECT * FROM enrollments WHERE LOWER(email)=? ORDER BY id DESC LIMIT 1", (email_clean,)
+    ).fetchone()
+
+    domain = (acct["domain"] if acct and acct["domain"] and acct["domain"] in VALID_DOMAINS else None) or \
+             (app_row["domain"] if app_row and app_row["domain"] and app_row["domain"] in VALID_DOMAINS else None) or \
+             (enr["domain"] if enr and enr["domain"] and enr["domain"] in VALID_DOMAINS else None) or ""
+
+    # Check Stage 5: Accepted (Confirmed)
+    is_confirmed = bool(
+        (enr and enr["payment_status"] == "Accepted") or
+        (app_row and app_row["status"] == STATUS_ACCEPTED)
+    )
+    if is_confirmed:
+        return {
+            "stage": STAGE_CONFIRMED,
+            "stage_num": 5,
+            "label": "Confirmed & Enrolled",
+            "acct": acct, "app_row": app_row, "enr": enr,
+            "domain": domain,
+            "is_accepted": True,
+            "can_upload_payment": False,
+        }
+
+    # Check Stage 4: Payment Verification Pending
+    has_receipt = bool(enr and (enr["payment_screenshot"] or "").strip())
+    is_payment_pending = bool(has_receipt and enr["payment_status"] == "Pending Verification")
+    if is_payment_pending:
+        return {
+            "stage": STAGE_PAYMENT_PENDING,
+            "stage_num": 4,
+            "label": "Payment Verification Pending",
+            "acct": acct, "app_row": app_row, "enr": enr,
+            "domain": domain,
+            "is_accepted": False,
+            "can_upload_payment": False,
+        }
+
+    # Check Rejection
+    if app_row and app_row["status"] == STATUS_REJECTED:
+        return {
+            "stage": STAGE_REJECTED,
+            "stage_num": 0,
+            "label": "Application Not Selected",
+            "acct": acct, "app_row": app_row, "enr": enr,
+            "domain": domain,
+            "is_accepted": False,
+            "can_upload_payment": False,
+        }
+
+    # Check Stage 3: Selected (Admin Approved Application -> Deposit Required)
+    is_selected = bool(
+        app_row and app_row["status"] in (STATUS_SELECTED, STATUS_ENROLLMENT_PENDING)
+    )
+    if is_selected:
+        return {
+            "stage": STAGE_SELECTED,
+            "stage_num": 3,
+            "label": "Application Approved — Deposit Required",
+            "acct": acct, "app_row": app_row, "enr": enr,
+            "domain": domain,
+            "is_accepted": False,
+            "can_upload_payment": True,
+        }
+
+    # Check Stage 2: Under Review (Application Submitted -> Waiting for Admin)
+    is_under_review = bool(
+        app_row and app_row["status"] in (STATUS_UNDER_REVIEW, STATUS_APPLY_PENDING, STATUS_ON_HOLD)
+    )
+    if is_under_review:
+        return {
+            "stage": STAGE_UNDER_REVIEW,
+            "stage_num": 2,
+            "label": "Application Under Review",
+            "acct": acct, "app_row": app_row, "enr": enr,
+            "domain": domain,
+            "is_accepted": False,
+            "can_upload_payment": False,
+        }
+
+    # Default: Stage 1: Application Required
+    return {
+        "stage": STAGE_APP_REQUIRED,
+        "stage_num": 1,
+        "label": "Application Required",
+        "acct": acct, "app_row": app_row, "enr": enr,
+        "domain": domain,
+        "is_accepted": False,
+        "can_upload_payment": False,
+    }
+
+
+def ensure_application_record(conn, acct, chosen_domain=None, status=STATUS_UNDER_REVIEW, why_join=None):
+    """Guarantees an application record exists in `applications` for the intern account,
+    with their chosen domain and profile details.
+    Synchronizes intern_accounts.application_id and enrollments.application_id."""
+    email = acct["email"].strip().lower()
+    domain = chosen_domain or (acct["domain"] if acct["domain"] and acct["domain"] in VALID_DOMAINS else None)
+    if not domain or domain not in VALID_DOMAINS:
+        domain = "AI Agent Development"
+
+    app_row = conn.execute(
+        "SELECT * FROM applications WHERE LOWER(email)=? ORDER BY id DESC LIMIT 1", (email,)
+    ).fetchone()
+
+    name = acct["name"] or "Intern"
+    phone = acct["phone"] or "Not Provided"
+    city = acct["city"] or "Not Specified"
+    college = acct["college"] or "Not Specified"
+    course = acct["course"] or "Not Specified"
+    semester = acct["semester"] or "Not Specified"
+    year_of_passing = acct["year_of_passing"] or str(datetime.now().year)
+
+    if app_row:
+        app_id = app_row["id"]
+        update_fields = ["domain=?", "city=?", "college=?", "course=?", "semester=?", "year_of_passing=?", "updated_at=?"]
+        update_vals = [domain, city, college, course, semester, year_of_passing, now_str()]
+        if status and app_row["status"] in (STATUS_UNDER_REVIEW, STATUS_APPLY_PENDING):
+            update_fields.append("status=?")
+            update_vals.append(status)
+        if why_join:
+            update_fields.append("why_join=?")
+            update_vals.append(why_join)
+        update_vals.append(app_id)
+        conn.execute(f"UPDATE applications SET {', '.join(update_fields)} WHERE id=?", tuple(update_vals))
+    else:
+        sop = why_join or "Completed profile onboarding and submitted application for internship track."
+        cur = conn.execute("""
+            INSERT INTO applications
+            (name, email, phone, city, college, course, semester, year_of_passing,
+             domain, why_join, status, source, created_at, updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (name, email, phone, city, college, course, semester, year_of_passing,
+              domain, sop, status or STATUS_UNDER_REVIEW, "portal_onboarding", now_str(), now_str()))
+        app_id = cur.lastrowid
+
+    conn.execute("UPDATE intern_accounts SET application_id=?, domain=?, updated_at=? WHERE id=?", (app_id, domain, now_str(), acct["id"]))
+    conn.execute("UPDATE enrollments SET application_id=?, domain=?, updated_at=? WHERE LOWER(email)=?", (app_id, domain, now_str(), email))
+    return conn.execute("SELECT * FROM applications WHERE id=?", (app_id,)).fetchone()
+
+
 def auto_assign_joining_date_on_accept(conn, app_row):
     """When an application transitions to Accepted, every accepted intern needs a
     joining_date set -- otherwise course content unlocks immediately instead of
@@ -1967,51 +2347,127 @@ def init_db():
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_device_visitor ON device_profiles(visitor_id)")
         conn.commit()
 
-        # Seed default chapters and subtopics for any course lacking syllabus content
-        courses = conn.execute("SELECT id, title, domain FROM courses").fetchall()
-        for c in courses:
-            cid = c["id"]
-            ch_cnt = conn.execute("SELECT COUNT(*) FROM course_chapters WHERE course_id=?", (cid,)).fetchone()[0]
-            if ch_cnt == 0:
-                c1 = conn.execute(
-                    "INSERT INTO course_chapters (course_id, day_number, title) VALUES (?, 1, 'Foundations & Environment')",
-                    (cid,)
-                ).lastrowid
-                conn.execute(
-                    "INSERT INTO course_subtopics (chapter_id, sort_order, title, brief, key_takeaways_json) "
-                    "VALUES (?, 1, 'Core Architecture & Syntax', 'Master fundamental language constructs and environment setup.', ?)",
-                    (c1, json.dumps(["Understand dynamic typing & memory model", "Write clean, modular code", "Set up isolated virtual environments"]))
-                )
-                conn.execute(
-                    "INSERT INTO course_subtopics (chapter_id, sort_order, title, brief, key_takeaways_json) "
-                    "VALUES (?, 2, 'Functions, Modules & Dependencies', 'Build re-usable functional components and manage packages.', ?)",
-                    (c1, json.dumps(["Define pure functions with type annotations", "Import custom and standard library modules", "Manage pip dependencies cleanly"]))
-                )
-                
-                c2 = conn.execute(
-                    "INSERT INTO course_chapters (course_id, day_number, title) VALUES (?, 2, 'Applied AI & Autonomous Agents')",
-                    (cid,)
-                ).lastrowid
-                conn.execute(
-                    "INSERT INTO course_subtopics (chapter_id, sort_order, title, brief, key_takeaways_json) "
-                    "VALUES (?, 1, 'LLM Architecture & Prompt Engineering', 'Build intelligent applications using Google Gemini API.', ?)",
-                    (c2, json.dumps(["Configure Google GenAI SDK", "Construct system instructions & few-shot prompts", "Handle streaming responses & JSON mode"]))
-                )
-                conn.execute(
-                    "INSERT INTO course_subtopics (chapter_id, sort_order, title, brief, key_takeaways_json) "
-                    "VALUES (?, 2, 'Tool Calling & Multi-Agent Loops', 'Equip AI agents with custom Python function calling capabilities.', ?)",
-                    (c2, json.dumps(["Define tool schemas using OpenAPI/Pydantic", "Execute agent function calls safely", "Build multi-step agent execution loops"]))
-                )
-                
-                c3 = conn.execute(
-                    "INSERT INTO course_chapters (course_id, day_number, title) VALUES (?, 3, 'Capstone Project & Production Deployment')",
-                    (cid,)
-                ).lastrowid
-                conn.execute(
-                    "INSERT INTO course_subtopics (chapter_id, sort_order, title, brief, key_takeaways_json) "
-                    "VALUES (?, 1, 'REST APIs & Production Deployment', 'Deploy your solution as production-ready microservices.', ?)",
-                    (c3, json.dumps(["Build async Flask REST endpoints", "Integrate SQLite persistence", "Deploy to cloud EC2 servers"]))
-                )
+        # ── Seed 4 Platform Domain Courses, Chapters, Subtopics, and Quizzes ──
+        for dc in PLATFORM_DOMAIN_COURSES:
+            existing_course = conn.execute(
+                "SELECT id FROM courses WHERE domain=? AND is_active=1 LIMIT 1", (dc["domain"],)
+            ).fetchone()
+            if existing_course:
+                cid = existing_course["id"]
+            else:
+                cur = conn.execute("""
+                    INSERT INTO courses
+                    (title, slug, domain, is_paid, price_inr, content_status, source, is_active,
+                     level, estimated_hours, banner_gradient, created_at, updated_at)
+                    VALUES (?, ?, ?, 0, 0, 'approved', 'custom', 1, ?, ?, ?, datetime('now','localtime'), datetime('now','localtime'))
+                """, (dc["title"], dc["slug"], dc["domain"], dc["level"], dc["estimated_hours"], dc["banner_gradient"]))
+                cid = cur.lastrowid
+
+            # Seed chapters, subtopics, and quizzes for this domain course
+            for ch in dc["chapters"]:
+                day_num = ch["day_number"]
+                ch_row = conn.execute(
+                    "SELECT id FROM course_chapters WHERE course_id=? AND day_number=? LIMIT 1",
+                    (cid, day_num)
+                ).fetchone()
+                if ch_row:
+                    ch_id = ch_row["id"]
+                else:
+                    cur_ch = conn.execute(
+                        "INSERT INTO course_chapters (course_id, day_number, title) VALUES (?, ?, ?)",
+                        (cid, day_num, ch["title"])
+                    )
+                    ch_id = cur_ch.lastrowid
+
+                # Subtopics
+                subtopic_count = conn.execute(
+                    "SELECT COUNT(*) FROM course_subtopics WHERE chapter_id=?", (ch_id,)
+                ).fetchone()[0]
+                if subtopic_count == 0:
+                    for sort_idx, (st_title, st_brief, st_takeaways) in enumerate(ch["subtopics"], start=1):
+                        conn.execute("""
+                            INSERT INTO course_subtopics (chapter_id, sort_order, title, brief, key_takeaways_json)
+                            VALUES (?, ?, ?, ?, ?)
+                        """, (ch_id, sort_idx, st_title, st_brief, json.dumps(st_takeaways)))
+
+                # Quizzes
+                quiz_row = conn.execute(
+                    "SELECT id FROM course_day_quizzes WHERE course_id=? AND day_number=? LIMIT 1",
+                    (cid, day_num)
+                ).fetchone()
+                if not quiz_row and ch.get("quiz"):
+                    conn.execute("""
+                        INSERT INTO course_day_quizzes (course_id, day_number, questions_json)
+                        VALUES (?, ?, ?)
+                    """, (cid, day_num, json.dumps(ch["quiz"])))
+
+        # ── Live Server Dynamic Reconciliation & Backfill ──
+        # 1. Backfill applications for any accepted enrollment lacking an application
+        accepted_enrs = conn.execute("""
+            SELECT e.* FROM enrollments e
+            WHERE e.payment_status = 'Accepted'
+            AND LOWER(e.email) NOT IN (SELECT LOWER(email) FROM applications WHERE status = 'Accepted')
+        """).fetchall()
+        for ae in accepted_enrs:
+            ae_email = (ae["email"] or "").strip().lower()
+            ae_domain = ae["domain"] if ae["domain"] in VALID_DOMAINS else "AI Agent Development"
+            acct_m = conn.execute("SELECT * FROM intern_accounts WHERE LOWER(email)=? LIMIT 1", (ae_email,)).fetchone()
+            cur_a = conn.execute("""
+                INSERT INTO applications
+                (name, email, phone, city, college, course, semester, year_of_passing,
+                 domain, why_join, status, source, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (ae["name"] or (acct_m["name"] if acct_m else "Intern"), ae_email,
+                  ae["phone"] or (acct_m["phone"] if acct_m else "Not Provided"),
+                  ae["city"] or "Remote", ae["college"] or "Student", ae["course"] or "B.Tech",
+                  ae["semester"] or "6", ae["year_of_passing"] or "2026",
+                  ae_domain, "Confirmed enrollment via deposit payment.", STATUS_ACCEPTED,
+                  "backfill", ae["created_at"] or now_str(), now_str()))
+            new_app_id = cur_a.lastrowid
+            conn.execute("UPDATE enrollments SET application_id=?, updated_at=? WHERE id=?", (new_app_id, now_str(), ae["id"]))
+            if acct_m:
+                conn.execute("UPDATE intern_accounts SET application_id=?, domain=?, updated_at=? WHERE id=?", (new_app_id, ae_domain, now_str(), acct_m["id"]))
+
+        # 2. Backfill applications for unverified payments lacking an application
+        pending_enrs = conn.execute("""
+            SELECT e.* FROM enrollments e
+            WHERE (e.payment_screenshot IS NOT NULL AND e.payment_screenshot != '')
+            AND e.payment_status = 'Pending Verification'
+            AND LOWER(e.email) NOT IN (SELECT LOWER(email) FROM applications)
+        """).fetchall()
+        for pe in pending_enrs:
+            pe_email = (pe["email"] or "").strip().lower()
+            pe_domain = pe["domain"] if pe["domain"] in VALID_DOMAINS else "AI Agent Development"
+            acct_m = conn.execute("SELECT * FROM intern_accounts WHERE LOWER(email)=? LIMIT 1", (pe_email,)).fetchone()
+            cur_p = conn.execute("""
+                INSERT INTO applications
+                (name, email, phone, city, college, course, semester, year_of_passing,
+                 domain, why_join, status, source, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (pe["name"] or (acct_m["name"] if acct_m else "Intern"), pe_email,
+                  pe["phone"] or (acct_m["phone"] if acct_m else "Not Provided"),
+                  pe["city"] or "Remote", pe["college"] or "Student", pe["course"] or "B.Tech",
+                  pe["semester"] or "6", pe["year_of_passing"] or "2026",
+                  pe_domain, "Uploaded enrollment deposit payment screenshot.", STATUS_ENROLLMENT_PENDING,
+                  "backfill", pe["created_at"] or now_str(), now_str()))
+            new_app_id = cur_p.lastrowid
+            conn.execute("UPDATE enrollments SET application_id=?, updated_at=? WHERE id=?", (new_app_id, now_str(), pe["id"]))
+            if acct_m:
+                conn.execute("UPDATE intern_accounts SET application_id=?, domain=?, updated_at=? WHERE id=?", (new_app_id, pe_domain, now_str(), acct_m["id"]))
+
+        # 3. Auto-enroll all accepted interns into their domain course
+        accepted_interns = conn.execute("""
+            SELECT DISTINCT ia.id, COALESCE(NULLIF(ia.domain, 'Undeclared'), NULLIF(enr.domain, 'Undeclared'), NULLIF(app.domain, 'Undeclared'), 'AI Agent Development') AS effective_domain
+            FROM intern_accounts ia
+            LEFT JOIN enrollments enr ON LOWER(ia.email) = LOWER(enr.email)
+            LEFT JOIN applications app ON LOWER(ia.email) = LOWER(app.email)
+            WHERE enr.payment_status = 'Accepted' OR app.status = 'Accepted'
+        """).fetchall()
+        for ai in accepted_interns:
+            eff_domain = ai["effective_domain"]
+            if eff_domain in VALID_DOMAINS:
+                auto_enroll_intern_in_domain_courses(conn, ai["id"], eff_domain)
+
         conn.commit()
 
 
@@ -3814,16 +4270,42 @@ def generate_tutor_token():
 def courses_catalog():
     page = int(request.args.get("page", 1))
     per_page = int(request.args.get("per_page", 20))
+    show_all = request.args.get("all", "0").strip() == "1"
+    is_admin = session.get("role") in ("admin", "superadmin")
+    intern = current_intern()
+    intern_domain = None
+    is_isolated = False
+
     with get_db() as conn:
+        if intern:
+            flow_st = get_intern_flow_state(conn, intern["email"])
+            intern_domain = flow_st.get("domain") or intern.get("domain")
+
+        params = []
+        where_clauses = ["c.is_active = 1", "(c.content_status = 'approved' OR c.company_id IS NULL)"]
+
+        if intern_domain and not show_all and not is_admin:
+            where_clauses.append("c.domain = ?")
+            params.append(intern_domain)
+            is_isolated = True
+
+        where_sql = " AND ".join(where_clauses)
         q = ("SELECT c.*, "
              "COALESCE(cmp.name, 'DBERT Platform') AS author_name, "
              "(SELECT COUNT(*) FROM course_chapters WHERE course_id = c.id) AS total_days "
              "FROM courses c "
              "LEFT JOIN companies cmp ON c.company_id = cmp.id "
-             "WHERE c.is_active = 1 AND (c.content_status = 'approved' OR c.company_id IS NULL) "
+             f"WHERE {where_sql} "
              "ORDER BY c.id DESC")
-        pagination = paginate(conn, q, page=page, per_page=per_page)
-    return render_template("courses_catalog.html", courses=pagination["items"], pagination=pagination)
+        pagination = paginate(conn, q, params=params, page=page, per_page=per_page)
+
+    return render_template(
+        "courses_catalog.html", 
+        courses=pagination["items"], 
+        pagination=pagination,
+        intern_domain=intern_domain,
+        is_isolated=is_isolated
+    )
 
 
 @app.route("/courses/<int:course_id>", methods=["GET"])
@@ -3838,6 +4320,13 @@ def course_detail(course_id):
         """, (course_id,)).fetchone()
         if not course:
             abort(404)
+
+        if intern and course["domain"]:
+            flow_st = get_intern_flow_state(conn, intern["email"])
+            intern_domain = flow_st.get("domain") or intern.get("domain")
+            if intern_domain and course["domain"] != intern_domain and session.get("role") not in ("admin", "superadmin"):
+                flash(f"This course is reserved for {course['domain']} track interns. Your registered track is {intern_domain}.", "info")
+                return redirect("/courses")
         
         chapters = conn.execute("""
             SELECT * FROM course_chapters WHERE course_id = ? ORDER BY day_number ASC
@@ -3887,6 +4376,16 @@ def course_enroll(course_id):
         if not course:
             return jsonify({"status": "error", "message": "Course not found"}), 404
             
+        if course["domain"]:
+            flow_st = get_intern_flow_state(conn, intern["email"])
+            intern_domain = flow_st.get("domain") or intern.get("domain")
+            if intern_domain and course["domain"] != intern_domain and session.get("role") not in ("admin", "superadmin"):
+                msg = f"Enrollment restricted. You are registered in the '{intern_domain}' track."
+                if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.is_json:
+                    return jsonify({"status": "error", "message": msg}), 403
+                flash(msg, "warning")
+                return redirect("/courses")
+
         if course["is_paid"]:
             return jsonify({"status": "error", "message": "Course requires payment"}), 400
             
@@ -5055,6 +5554,14 @@ def handle_enrollment_accepted(conn, enrollment_id):
         )
     except Exception as e:
         log_error("referral-commission-enrollment", e)
+
+    # 3. Auto-enroll intern into their domain course(s)
+    try:
+        domain = (enr["domain"] if enr["domain"] in VALID_DOMAINS else None) or \
+                 (acct["domain"] if "domain" in acct.keys() and acct["domain"] in VALID_DOMAINS else None) or "AI Agent Development"
+        auto_enroll_intern_in_domain_courses(conn, acct["id"], domain)
+    except Exception as e:
+        log_error("referral-auto-enroll-course", e)
 
 
 
@@ -6628,8 +7135,7 @@ def signup_stage1():
                 VALUES (?,?,?,?,1,1,?,?,1,?,?)
             """, (name, email, phone, set_password_hash(password), now_str(), newsletter, now_str(), now_str()))
 
-            # Auto-initialize baseline application in STATUS_SELECTED so the intern
-            # enters the ₹499 refundable deposit enrollment funnel immediately
+            # Auto-initialize baseline application in STATUS_UNDER_REVIEW for admissions review
             chosen_domain = clean_text(data.get("domain"))
             if chosen_domain not in VALID_DOMAINS:
                 chosen_domain = "AI Agent Development"
@@ -6650,7 +7156,7 @@ def signup_stage1():
                     clean_text(data.get("year_of_passing")) or "2026",
                     chosen_domain,
                     "Enrolled via DBERT portal direct registration.",
-                    STATUS_SELECTED,
+                    STATUS_UNDER_REVIEW,
                     visitor_id,
                     now_str(),
                     now_str()
@@ -9407,9 +9913,15 @@ def intern_me():
 
             # Course enrollments summary with local progress calculation
             enriched_enrs = []
+            flow_st = None
             if acct:
+                # Auto-enroll accepted intern on-the-fly if missing course enrollment
+                flow_st = get_intern_flow_state(conn, acct["email"])
+                if flow_st["is_accepted"] and flow_st["domain"]:
+                    auto_enroll_intern_in_domain_courses(conn, acct["id"], flow_st["domain"])
+
                 raw_enrs = conn.execute(
-                    "SELECT ce.*, c.title, c.slug, c.level FROM course_enrollments ce JOIN courses c ON c.id=ce.course_id WHERE ce.intern_id=? ORDER BY ce.id DESC",
+                    "SELECT ce.*, c.title, c.slug, c.level, c.domain FROM course_enrollments ce JOIN courses c ON c.id=ce.course_id WHERE ce.intern_id=? ORDER BY ce.id DESC",
                     (acct["id"],)
                 ).fetchall()
                 for ce in raw_enrs:
@@ -9484,6 +9996,16 @@ def intern_me():
             "tasks_completed_count": approved_tasks,
             "total_coins": total_coins,
             "course_enrollments": enriched_enrs,
+            "flow_state": {
+                "stage": flow_st["stage"],
+                "stage_num": flow_st["stage_num"],
+                "label": flow_st["label"],
+                "domain": flow_st["domain"],
+                "is_accepted": flow_st["is_accepted"],
+                "can_upload_payment": flow_st["can_upload_payment"],
+            } if flow_st else None,
+            "flow_stage": flow_st["stage"] if flow_st else None,
+            "flow_stage_num": flow_st["stage_num"] if flow_st else None,
         })
     except Exception as e:
         log_error("intern-me", e)
@@ -10346,11 +10868,19 @@ def enroll():
             if not acct:
                 return jsonify({"status": "error", "message": "Account not found."}), 404
             app_row = conn.execute(
-                "SELECT * FROM applications WHERE email=? AND status IN (?,?,?,?,?,?,?) ORDER BY id DESC LIMIT 1",
-                (email, STATUS_SELECTED, STATUS_ENROLLMENT_PENDING, STATUS_ENROLLED, STATUS_ACCEPTED, STATUS_PAID_ENROLLED, STATUS_UNDER_REVIEW, STATUS_APPLY_PENDING)
+                "SELECT * FROM applications WHERE LOWER(email)=? ORDER BY id DESC LIMIT 1", (email,)
             ).fetchone()
             if not app_row:
-                return jsonify({"status": "error", "message": "Not eligible for enrollment yet."}), 400
+                return jsonify({"status": "error", "message": "Please submit your internship application first before enrolling."}), 400
+
+            if app_row["status"] in (STATUS_UNDER_REVIEW, STATUS_APPLY_PENDING, STATUS_ON_HOLD):
+                return jsonify({
+                    "status": "error",
+                    "message": "Your application is currently under review by admissions mentors. Deposit payment unlocks once your application is approved."
+                }), 403
+
+            if app_row["status"] not in (STATUS_SELECTED, STATUS_ENROLLMENT_PENDING, STATUS_ENROLLED, STATUS_ACCEPTED, STATUS_PAID_ENROLLED):
+                return jsonify({"status": "error", "message": f"Enrollment not permitted in status '{app_row['status']}'."}), 400
 
             domain_to_save = chosen_domain or (acct["domain"] if acct["domain"] and acct["domain"] != "Undeclared" else None) or (app_row["domain"] if app_row["domain"] and app_row["domain"] != "Undeclared" else None)
             if not domain_to_save:
@@ -10397,8 +10927,13 @@ def enroll():
 
 @app.route("/intern/wizard-status")
 def intern_wizard_status():
-    """Inspects intern profile for missing data (domain, joining_date, payment_screenshot, academic profile)
-    and returns an ordered list of steps for the interactive self-healing onboarding modal."""
+    """Inspects intern profile and stage according to the strict 5-stage lifecycle:
+    Stage 1 (APPLICATION_REQUIRED): returns steps for domain, academic_profile, and statement of purpose. Payment is LOCKED.
+    Stage 2 (UNDER_REVIEW): informs candidate application is under review by mentors. Payment is LOCKED.
+    Stage 3 (SELECTED): prompts candidate to pick joining Monday and upload ₹499 payment receipt. Payment is UNLOCKED.
+    Stage 4 (PAYMENT_PENDING): payment receipt submitted, admin verification in progress.
+    Stage 5 (CONFIRMED): fully enrolled and confirmed. Auto-enrolled into domain course.
+    """
     try:
         user = require_role("intern")
         if not user:
@@ -10406,98 +10941,185 @@ def intern_wizard_status():
         email = user["email"].strip().lower()
 
         with get_db() as conn:
-            acct = conn.execute(
-                "SELECT * FROM intern_accounts WHERE LOWER(email)=? AND is_active=1 LIMIT 1", (email,)
-            ).fetchone()
+            state = get_intern_flow_state(conn, email)
+            acct = state["acct"]
+            app_row = state["app_row"]
+            enr = state["enr"]
+
             if not acct:
                 return jsonify({"status": "error", "message": "Account not found."}), 404
 
-            app_row = conn.execute(
-                "SELECT * FROM applications WHERE LOWER(email)=? ORDER BY id DESC LIMIT 1", (email,)
-            ).fetchone()
-
-            enr = conn.execute(
-                "SELECT * FROM enrollments WHERE LOWER(email)=? ORDER BY id DESC LIMIT 1", (email,)
-            ).fetchone()
-
+            stage = state["stage"]
             missing_steps = []
 
-            # Step 1: Domain check
-            curr_domain = (acct["domain"] or "").strip()
-            enr_domain = (enr["domain"] or "").strip() if enr else ""
-
-            if (not curr_domain or curr_domain == "Undeclared") and (not enr_domain or enr_domain == "Undeclared"):
-                missing_steps.append({
-                    "key": "domain",
-                    "title": "Select Internship Domain",
-                    "subtitle": "Choose your primary specialization track to configure your syllabus, tasks, and certification.",
-                    "type": "domain_select",
-                    "current_value": curr_domain if curr_domain != "Undeclared" else "",
-                    "options": VALID_DOMAINS
+            # Stage 5: Confirmed & Enrolled
+            if stage == STAGE_CONFIRMED:
+                return jsonify({
+                    "status": "success",
+                    "stage": stage,
+                    "stage_num": 5,
+                    "label": "Confirmed & Enrolled",
+                    "needs_completion": False,
+                    "total_steps": 0,
+                    "steps": []
                 })
 
-            # Step 2: Joining Date check
-            enr_joining = (enr["joining_date"] or "").strip() if enr else ""
-            if not enr_joining:
-                selectable = get_selectable_mondays()
-                missing_steps.append({
-                    "key": "joining_date",
-                    "title": "Choose Batch Joining Date",
-                    "subtitle": "Select your batch start date. You can select either of the last 2 Mondays (for immediate access) or an upcoming Monday.",
-                    "type": "joining_date_select",
-                    "current_value": enr_joining,
-                    "options": selectable,
-                    "labels": {
-                        selectable[0]: f"{make_batch_label(selectable[0])} (2 Weeks Ago - Instant Unlock)",
-                        selectable[1]: f"{make_batch_label(selectable[1])} (Last Monday - Instant Unlock)",
-                        selectable[2]: f"{make_batch_label(selectable[2])} (Next Batch)",
-                        selectable[3]: f"{make_batch_label(selectable[3])} (Upcoming Batch)",
-                        selectable[4]: f"{make_batch_label(selectable[4])} (Upcoming Batch)" if len(selectable) > 4 else ""
-                    }
+            # Stage 4: Payment Verification Pending
+            if stage == STAGE_PAYMENT_PENDING:
+                return jsonify({
+                    "status": "success",
+                    "stage": stage,
+                    "stage_num": 4,
+                    "label": "Payment Verification Pending",
+                    "needs_completion": False,
+                    "total_steps": 0,
+                    "steps": [],
+                    "message": "Payment receipt submitted. Admin verification in progress."
                 })
 
-            # Step 3: Payment Screenshot check
-            has_receipt = bool(enr and (enr["payment_screenshot"] or "").strip())
-            is_rejected_receipt = bool(enr and enr["payment_status"] == "Rejected")
-            is_accepted = bool((enr and enr["payment_status"] == "Accepted") or (app_row and app_row["status"] == STATUS_ACCEPTED))
-            
-            # Show deposit proof step if not already confirmed accepted and lacking verified receipt
-            if not is_accepted and (not has_receipt or is_rejected_receipt):
+            # Stage 2: Application Under Review
+            if stage == STAGE_UNDER_REVIEW:
+                college = (acct["college"] or "").strip()
+                course = (acct["course"] or "").strip()
+                if not college or college.lower() in ("n/a", "none", "unknown", "") or not course or course.lower() in ("n/a", "none", ""):
+                    missing_steps.append({
+                        "key": "academic_profile",
+                        "title": "Confirm Academic Profile",
+                        "subtitle": "Ensure your college name and degree course are on record for the admissions review.",
+                        "type": "profile_form",
+                        "fields": {
+                            "college": college if college.lower() not in ("n/a", "none", "unknown") else "",
+                            "course": course if course.lower() not in ("n/a", "none") else "",
+                            "year_of_passing": (acct["year_of_passing"] or "").strip(),
+                            "city": (acct["city"] or "").strip()
+                        }
+                    })
+
+                return jsonify({
+                    "status": "success",
+                    "stage": stage,
+                    "stage_num": 2,
+                    "label": "Application Under Review",
+                    "needs_completion": len(missing_steps) > 0,
+                    "total_steps": len(missing_steps),
+                    "steps": missing_steps,
+                    "payment_locked": True,
+                    "message": "Your application is under review by DBERT mentors. Deposit payment will unlock upon admin selection."
+                })
+
+            # Stage 1: Application Required
+            if stage == STAGE_APP_REQUIRED:
+                curr_domain = (acct["domain"] or "").strip()
+                if not curr_domain or curr_domain not in VALID_DOMAINS:
+                    missing_steps.append({
+                        "key": "domain",
+                        "title": "Select Internship Domain",
+                        "subtitle": "Choose your primary specialization track for your internship application.",
+                        "type": "domain_select",
+                        "current_value": curr_domain if curr_domain in VALID_DOMAINS else "AI Agent Development",
+                        "options": VALID_DOMAINS
+                    })
+
+                college = (acct["college"] or "").strip()
+                course = (acct["course"] or "").strip()
+                if not college or college.lower() in ("n/a", "none", "unknown", "") or not course or course.lower() in ("n/a", "none", ""):
+                    missing_steps.append({
+                        "key": "academic_profile",
+                        "title": "Complete Academic Details",
+                        "subtitle": "Enter your college and degree course to complete your application.",
+                        "type": "profile_form",
+                        "fields": {
+                            "college": college if college.lower() not in ("n/a", "none", "unknown") else "",
+                            "course": course if course.lower() not in ("n/a", "none") else "",
+                            "year_of_passing": (acct["year_of_passing"] or "").strip(),
+                            "city": (acct["city"] or "").strip()
+                        }
+                    })
+
+                missing_steps.append({
+                    "key": "application_sop",
+                    "title": "Statement of Purpose",
+                    "subtitle": "Briefly describe why you want to join this internship track (min 80 characters).",
+                    "type": "textarea",
+                    "placeholder": "Explain your background, interest in this domain, and what you aim to achieve during this internship...",
+                    "current_value": app_row["why_join"] if app_row else ""
+                })
+
+                return jsonify({
+                    "status": "success",
+                    "stage": stage,
+                    "stage_num": 1,
+                    "label": "Application Required",
+                    "needs_completion": True,
+                    "total_steps": len(missing_steps),
+                    "steps": missing_steps,
+                    "payment_locked": True,
+                    "message": "Please submit your internship application for admissions review."
+                })
+
+            # Stage 3: Selected (Deposit Required)
+            if stage == STAGE_SELECTED:
+                curr_domain = (acct["domain"] or "").strip()
+                if not curr_domain or curr_domain not in VALID_DOMAINS:
+                    missing_steps.append({
+                        "key": "domain",
+                        "title": "Confirm Internship Domain",
+                        "subtitle": "Confirm your specialization track for enrollment.",
+                        "type": "domain_select",
+                        "current_value": curr_domain if curr_domain in VALID_DOMAINS else "AI Agent Development",
+                        "options": VALID_DOMAINS
+                    })
+
+                enr_joining = (enr["joining_date"] or "").strip() if enr else ""
+                if not enr_joining:
+                    selectable = get_selectable_mondays()
+                    missing_steps.append({
+                        "key": "joining_date",
+                        "title": "Choose Batch Joining Date",
+                        "subtitle": "Select your batch start date. You can select either of the last 2 Mondays (for immediate access) or an upcoming Monday.",
+                        "type": "joining_date_select",
+                        "current_value": enr_joining,
+                        "options": selectable,
+                        "labels": {
+                            selectable[0]: f"{make_batch_label(selectable[0])} (2 Weeks Ago - Instant Unlock)",
+                            selectable[1]: f"{make_batch_label(selectable[1])} (Last Monday - Instant Unlock)",
+                            selectable[2]: f"{make_batch_label(selectable[2])} (Next Batch)",
+                            selectable[3]: f"{make_batch_label(selectable[3])} (Upcoming Batch)",
+                            selectable[4]: f"{make_batch_label(selectable[4])} (Upcoming Batch)" if len(selectable) > 4 else ""
+                        }
+                    })
+
+                is_rejected_receipt = bool(enr and enr["payment_status"] == "Rejected")
                 missing_steps.append({
                     "key": "payment_screenshot",
                     "title": "Upload ₹499 Refundable Deposit Proof",
-                    "subtitle": "Secure your seat with a fully refundable deposit. Pay via UPI and upload your receipt screenshot.",
+                    "subtitle": "Your application is approved! Secure your confirmed seat with a refundable deposit.",
                     "type": "file_upload",
                     "upi_id": UPI_ID,
                     "amount": 499,
                     "is_rejected": is_rejected_receipt
                 })
 
-            # Step 4: Academic Profile check
-            college = (acct["college"] or "").strip()
-            course = (acct["course"] or "").strip()
-            year = (acct["year_of_passing"] or "").strip()
-            city = (acct["city"] or "").strip()
-
-            if not college or college.lower() in ("n/a", "none", "unknown", "") or not course or course.lower() in ("n/a", "none", ""):
-                missing_steps.append({
-                    "key": "academic_profile",
-                    "title": "Confirm Academic Profile",
-                    "subtitle": "Ensure your college name and degree course are on record for your official offer letter and certificate.",
-                    "type": "profile_form",
-                    "fields": {
-                        "college": college if college.lower() not in ("n/a", "none", "unknown") else "",
-                        "course": course if course.lower() not in ("n/a", "none") else "",
-                        "year_of_passing": year,
-                        "city": city
-                    }
+                return jsonify({
+                    "status": "success",
+                    "stage": stage,
+                    "stage_num": 3,
+                    "label": "Selected — Deposit Required",
+                    "needs_completion": True,
+                    "total_steps": len(missing_steps),
+                    "steps": missing_steps,
+                    "payment_locked": False,
+                    "message": "Congratulations! You have been selected. Upload your deposit receipt to confirm your enrollment."
                 })
 
             return jsonify({
                 "status": "success",
-                "needs_completion": len(missing_steps) > 0,
-                "total_steps": len(missing_steps),
-                "steps": missing_steps
+                "stage": STAGE_REJECTED,
+                "stage_num": 0,
+                "label": "Application Not Selected",
+                "needs_completion": False,
+                "total_steps": 0,
+                "steps": []
             })
     except Exception as e:
         log_error("intern-wizard-status", e)
@@ -10506,8 +11128,8 @@ def intern_wizard_status():
 
 @app.route("/intern/save-wizard-step", methods=["POST"])
 def intern_save_wizard_step():
-    """Atomically saves an individual onboarding wizard step (domain, joining_date, payment_screenshot, academic_profile)
-    into the database across intern_accounts, applications, and enrollments."""
+    """Atomically saves an individual onboarding wizard step (domain, academic_profile, application_sop, joining_date, payment_screenshot)
+    strictly respecting the 5-stage lifecycle state machine."""
     try:
         user = require_role("intern")
         if not user:
@@ -10551,82 +11173,15 @@ def intern_save_wizard_step():
                 conn.commit()
                 return jsonify({"status": "success", "message": "Domain updated successfully.", "domain": val})
 
-            elif step_key == "joining_date":
-                val = clean_text(request.form.get("value") or ((request.is_json and request.get_json(silent=True)) or {}).get("value"))
-                valid, err = validate_joining_date(val)
-                if not valid:
-                    return jsonify({"status": "error", "message": err}), 400
-
-                batch_label = make_batch_label(val)
-                domain = (acct["domain"] if acct["domain"] and acct["domain"] != "Undeclared" else None) or \
-                         (app_row["domain"] if app_row and app_row["domain"] and app_row["domain"] != "Undeclared" else "AI Agent Development")
-
-                if enr:
-                    conn.execute("""
-                        UPDATE enrollments
-                        SET joining_date=?, batch_label=?, updated_at=?
-                        WHERE id=?
-                    """, (val, batch_label, now_str(), enr["id"]))
-                else:
-                    app_id = app_row["id"] if app_row else None
-                    conn.execute("""
-                        INSERT INTO enrollments
-                        (application_id, timestamp, name, email, phone, city, college, course, semester,
-                         year_of_passing, domain, joining_date, batch_label, payment_screenshot,
-                         payment_status, created_at, updated_at)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                    """, (app_id, now_str(), acct["name"], email, acct["phone"], acct["city"], acct["college"],
-                          acct["course"], acct["semester"], acct["year_of_passing"], domain,
-                          val, batch_label, "", "Pending Verification", now_str(), now_str()))
+            elif step_key == "application_sop":
+                payload = request.get_json(silent=True) if request.is_json else request.form
+                why_join = clean_text(payload.get("why_join") or payload.get("value"))
+                if not why_join or len(why_join) < 80:
+                    return jsonify({"status": "error", "message": "Statement of purpose must be at least 80 characters."}), 400
+                domain = (acct["domain"] if acct["domain"] and acct["domain"] in VALID_DOMAINS else "AI Agent Development")
+                ensure_application_record(conn, acct, chosen_domain=domain, status=STATUS_UNDER_REVIEW, why_join=why_join)
                 conn.commit()
-                return jsonify({"status": "success", "message": "Joining date updated successfully.", "joining_date": val, "batch_label": batch_label})
-
-            elif step_key == "payment_screenshot":
-                if "payment_screenshot" not in request.files:
-                    return jsonify({"status": "error", "message": "Payment screenshot required."}), 400
-                file = request.files["payment_screenshot"]
-                if not file or not file.filename:
-                    return jsonify({"status": "error", "message": "Payment screenshot required."}), 400
-                if not allowed_file(file.filename):
-                    return jsonify({"status": "error", "message": "Allowed: png, jpg, jpeg, pdf"}), 400
-                sniffed = sniff_upload_type(file)
-                if sniffed is None:
-                    log_abuse(ip, "/intern/save-wizard-step", "wizard:upload", "bad_magic", email)
-                    return jsonify({"status": "error", "message": "File must be a real PNG, JPEG, or PDF."}), 400
-
-                filename = f"{uuid.uuid4().hex}.{sniffed}"
-                file.save(os.path.join(app.config["UPLOAD_FOLDER"], filename))
-
-                domain = (acct["domain"] if acct["domain"] and acct["domain"] != "Undeclared" else None) or \
-                         (app_row["domain"] if app_row and app_row["domain"] and app_row["domain"] != "Undeclared" else "AI Agent Development")
-
-                if enr:
-                    conn.execute("""
-                        UPDATE enrollments
-                        SET payment_screenshot=?, payment_status='Pending Verification', updated_at=?
-                        WHERE id=?
-                    """, (filename, now_str(), enr["id"]))
-                else:
-                    mondays = get_selectable_mondays()
-                    default_monday = mondays[1]
-                    batch_label = make_batch_label(default_monday)
-                    app_id = app_row["id"] if app_row else None
-                    conn.execute("""
-                        INSERT INTO enrollments
-                        (application_id, timestamp, name, email, phone, city, college, course, semester,
-                         year_of_passing, domain, joining_date, batch_label, payment_screenshot,
-                         payment_status, created_at, updated_at)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                    """, (app_id, now_str(), acct["name"], email, acct["phone"], acct["city"], acct["college"],
-                          acct["course"], acct["semester"], acct["year_of_passing"], domain,
-                          default_monday, batch_label, filename, "Pending Verification", now_str(), now_str()))
-
-                if app_row and app_row["status"] in (STATUS_UNDER_REVIEW, STATUS_APPLY_PENDING, STATUS_SELECTED):
-                    conn.execute("UPDATE applications SET status=?, updated_at=? WHERE id=?",
-                                 (STATUS_ENROLLMENT_PENDING, now_str(), app_row["id"]))
-
-                conn.commit()
-                return jsonify({"status": "success", "message": "Receipt uploaded successfully.", "filename": filename})
+                return jsonify({"status": "success", "message": "Application submitted for admissions review.", "stage": STAGE_UNDER_REVIEW})
 
             elif step_key == "academic_profile":
                 payload = request.get_json(silent=True) if request.is_json else request.form
@@ -10662,6 +11217,90 @@ def intern_save_wizard_step():
 
                 conn.commit()
                 return jsonify({"status": "success", "message": "Academic details saved."})
+
+            elif step_key == "joining_date":
+                val = clean_text(request.form.get("value") or ((request.is_json and request.get_json(silent=True)) or {}).get("value"))
+                valid, err = validate_joining_date(val)
+                if not valid:
+                    return jsonify({"status": "error", "message": err}), 400
+
+                batch_label = make_batch_label(val)
+                domain = (acct["domain"] if acct["domain"] and acct["domain"] in VALID_DOMAINS else None) or \
+                         (app_row["domain"] if app_row and app_row["domain"] and app_row["domain"] in VALID_DOMAINS else "AI Agent Development")
+
+                if enr:
+                    conn.execute("""
+                        UPDATE enrollments
+                        SET joining_date=?, batch_label=?, updated_at=?
+                        WHERE id=?
+                    """, (val, batch_label, now_str(), enr["id"]))
+                else:
+                    app_id = app_row["id"] if app_row else None
+                    conn.execute("""
+                        INSERT INTO enrollments
+                        (application_id, timestamp, name, email, phone, city, college, course, semester,
+                         year_of_passing, domain, joining_date, batch_label, payment_screenshot,
+                         payment_status, created_at, updated_at)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    """, (app_id, now_str(), acct["name"], email, acct["phone"], acct["city"], acct["college"],
+                          acct["course"], acct["semester"], acct["year_of_passing"], domain,
+                          val, batch_label, "", "Pending Verification", now_str(), now_str()))
+                conn.commit()
+                return jsonify({"status": "success", "message": "Joining date updated successfully.", "joining_date": val, "batch_label": batch_label})
+
+            elif step_key == "payment_screenshot":
+                flow_state = get_intern_flow_state(conn, email)
+                if not flow_state["can_upload_payment"]:
+                    return jsonify({
+                        "status": "error",
+                        "message": "Deposit payment upload is only available after your application has been selected by admissions mentors."
+                    }), 403
+
+                if "payment_screenshot" not in request.files:
+                    return jsonify({"status": "error", "message": "Payment screenshot required."}), 400
+                file = request.files["payment_screenshot"]
+                if not file or not file.filename:
+                    return jsonify({"status": "error", "message": "Payment screenshot required."}), 400
+                if not allowed_file(file.filename):
+                    return jsonify({"status": "error", "message": "Allowed: png, jpg, jpeg, pdf"}), 400
+                sniffed = sniff_upload_type(file)
+                if sniffed is None:
+                    log_abuse(ip, "/intern/save-wizard-step", "wizard:upload", "bad_magic", email)
+                    return jsonify({"status": "error", "message": "File must be a real PNG, JPEG, or PDF."}), 400
+
+                filename = f"{uuid.uuid4().hex}.{sniffed}"
+                file.save(os.path.join(app.config["UPLOAD_FOLDER"], filename))
+
+                domain = (acct["domain"] if acct["domain"] and acct["domain"] in VALID_DOMAINS else None) or \
+                         (app_row["domain"] if app_row and app_row["domain"] and app_row["domain"] in VALID_DOMAINS else "AI Agent Development")
+
+                if enr:
+                    conn.execute("""
+                        UPDATE enrollments
+                        SET payment_screenshot=?, payment_status='Pending Verification', updated_at=?
+                        WHERE id=?
+                    """, (filename, now_str(), enr["id"]))
+                else:
+                    mondays = get_selectable_mondays()
+                    default_monday = mondays[1]
+                    batch_label = make_batch_label(default_monday)
+                    app_id = app_row["id"] if app_row else None
+                    conn.execute("""
+                        INSERT INTO enrollments
+                        (application_id, timestamp, name, email, phone, city, college, course, semester,
+                         year_of_passing, domain, joining_date, batch_label, payment_screenshot,
+                         payment_status, created_at, updated_at)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    """, (app_id, now_str(), acct["name"], email, acct["phone"], acct["city"], acct["college"],
+                          acct["course"], acct["semester"], acct["year_of_passing"], domain,
+                          default_monday, batch_label, filename, "Pending Verification", now_str(), now_str()))
+
+                if app_row and app_row["status"] in (STATUS_SELECTED, STATUS_ENROLLMENT_PENDING):
+                    conn.execute("UPDATE applications SET status=?, updated_at=? WHERE id=?",
+                                 (STATUS_ENROLLMENT_PENDING, now_str(), app_row["id"]))
+
+                conn.commit()
+                return jsonify({"status": "success", "message": "Receipt uploaded successfully.", "filename": filename})
 
             else:
                 return jsonify({"status": "error", "message": f"Unknown step_key: {step_key}"}), 400
@@ -10933,17 +11572,24 @@ def intern_tutor_progress():
             return jsonify({"status": "error", "message": "Unauthorized"}), 401
         with get_db() as conn:
             acct = conn.execute(
-                "SELECT id FROM intern_accounts WHERE email=? AND is_active=1",
+                "SELECT * FROM intern_accounts WHERE email=? AND is_active=1",
                 (user["email"],)
             ).fetchone()
             if not acct:
                 return jsonify({"status": "error", "message": "Account not found"}), 404
 
-            enrollments = conn.execute(
-                "SELECT ce.*, c.title, c.slug FROM course_enrollments ce "
-                "JOIN courses c ON c.id = ce.course_id WHERE ce.intern_id = ?",
-                (acct["id"],)
-            ).fetchall()
+            flow_st = get_intern_flow_state(conn, user["email"])
+            if flow_st["is_accepted"] and flow_st["domain"]:
+                auto_enroll_intern_in_domain_courses(conn, acct["id"], flow_st["domain"])
+
+            enroll_query = ("SELECT ce.*, c.title, c.slug, c.domain FROM course_enrollments ce "
+                            "JOIN courses c ON c.id = ce.course_id WHERE ce.intern_id = ? ")
+            params = [acct["id"]]
+            if flow_st["domain"]:
+                enroll_query += "AND c.domain = ? "
+                params.append(flow_st["domain"])
+
+            enrollments = conn.execute(enroll_query, tuple(params)).fetchall()
 
             courses_progress = []
             overall_pct = 0
@@ -11651,6 +12297,9 @@ def admin_update_application_status():
                 return jsonify({"status": "error", "message": "Application status changed concurrently."}), 409
             if new_status == STATUS_ACCEPTED:
                 joining_date_for_email = auto_assign_joining_date_on_accept(conn, app_row)
+                acct_m = conn.execute("SELECT id FROM intern_accounts WHERE LOWER(email)=? LIMIT 1", (app_row["email"].lower(),)).fetchone()
+                if acct_m:
+                    auto_enroll_intern_in_domain_courses(conn, acct_m["id"], app_row["domain"])
             conn.commit()
         if old_status != new_status:
             send_status_update_email(app_row["name"], app_row["email"], app_row["domain"], new_status, note, joining_date_for_email)

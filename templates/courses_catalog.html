@@ -18,14 +18,30 @@
          projects, and certified tracks.</p>
     </div>
 
+    {% if is_isolated and intern_domain %}
+    <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 12px; padding: 16px 20px; margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span style="display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; background: #10B981; color: white; font-size: 18px;">
+          <i class="fa-solid fa-graduation-cap"></i>
+        </span>
+        <div>
+          <div style="font-weight: 700; color: #10B981; font-size: 15px;">Your Assigned Internship Specialization Track</div>
+          <div style="font-size: 13px; color: var(--text-muted, #94a3b8);">Showing curriculum exclusively curated for <strong>{{ intern_domain }}</strong>.</div>
+        </div>
+      </div>
+      <a href="/portal" class="btn btn-outline btn-sm">
+        <i class="fa-solid fa-gauge-high"></i> Dashboard
+      </a>
+    </div>
+    {% endif %}
+
     <div class="toolbar">
       <div class="search-box">
         <i class="fa-solid fa-magnifying-glass search-icon"></i>
         <label for="searchInput" class="sr-only">Search courses</label>
         <input type="text" id="searchInput" placeholder="Search courses…" data-act-keyup="filterCourses">
       </div>
-      {# setDomain() reads each button's onclick attribute to decide which chip is
-         active — these strings are a behavioural contract, not just markup. #}
+      {% if not is_isolated %}
       <div class="tag-row">
         <button class="tag-btn active" data-act-click="setDomain" data-arg-click='["all"]'>All Domains</button>
         <button class="tag-btn" data-act-click="setDomain" data-arg-click='["AI Agent Development"]'>🤖 AI Agent Dev</button>
@@ -33,6 +49,11 @@
         <button class="tag-btn" data-act-click="setDomain" data-arg-click='["Full Stack Development"]'>💻 Full Stack Dev</button>
         <button class="tag-btn" data-act-click="setDomain" data-arg-click='["Python Automation"]'>🐍 Python Automation</button>
       </div>
+      {% else %}
+      <div class="tag-row">
+        <button class="tag-btn active" style="pointer-events: none;"><i class="fa-solid fa-check"></i> {{ intern_domain }} Track</button>
+      </div>
+      {% endif %}
     </div>
 
     <div class="catalog-grid" id="catalogGrid">
@@ -91,8 +112,8 @@
     function setDomain(domain) {
         currentDomain = domain;
         document.querySelectorAll('.tag-btn').forEach(btn => {
-            const attr = btn.getAttribute('onclick') || '';
-            btn.classList.toggle('active', attr.includes("'" + domain + "'"));
+            const attr = btn.getAttribute('data-arg-click') || btn.getAttribute('onclick') || '';
+            btn.classList.toggle('active', attr.includes(domain));
         });
         filterCourses();
     }

@@ -813,7 +813,7 @@
   }
 
   /* ════ STATE ════ */
-  let _intern=null,_apps=[],_jobApps=[],_enr=null,_status='',_ivStatus=null,_reapplyInfo=null;
+  let _intern=null,_apps=[],_jobApps=[],_enr=null,_status='',_flowState=null,_ivStatus=null,_reapplyInfo=null;
   let _upiId='Q681021429@ybl',_upiAmount=499,_selectedFile=null,_paidEligible=false;
   let _currentJobAppId=null,_jobDepositFile=null;
   let _joiningDate=null,_joiningDateStr='',_isUnlocked=false,_allWeeks=[];
@@ -1338,6 +1338,15 @@
           </div>
         </div>
       `;
+    } else if(step.type === 'textarea'){
+      _wizardSelectedVal = step.current_value || '';
+      body.innerHTML = `
+        <div class="wiz-form-group">
+          <label for="wizTextarea"><i class="fas fa-pencil-alt" style="color:var(--gold);"></i> ${escHtml(step.title || 'Statement of Purpose')} * <span id="wizCharCount" style="float:right;font-size:12px;color:var(--tx-muted);">${(_wizardSelectedVal||'').length} / 80 min</span></label>
+          <textarea id="wizTextarea" class="wiz-form-input" rows="5" placeholder="${escHtml(step.placeholder||'Write your response here...')}" style="line-height:1.5;padding:12px;width:100%;resize:vertical;" oninput="onWizardTextareaInput(this)">${escHtml(_wizardSelectedVal)}</textarea>
+          <div style="font-size:11.5px;color:var(--tx-muted);margin-top:6px;">Minimum 80 characters required for admissions review.</div>
+        </div>
+      `;
     }
   }
 
@@ -1444,6 +1453,14 @@
         showWizardError('Please enter your course / degree.');
         return;
       }
+    } else if(step.type === 'textarea'){
+      const ta = document.getElementById('wizTextarea');
+      const val = ta ? ta.value.trim() : '';
+      if(!val || val.length < 80){
+        showWizardError('Please provide at least 80 characters in your statement of purpose (' + (val ? val.length : 0) + '/80 characters).');
+        return;
+      }
+      _wizardSelectedVal = val;
     }
 
     if(nextBtn){
@@ -1551,6 +1568,17 @@
     if(ov) ov.classList.add('hidden');
   }
 
+  function onWizardTextareaInput(el){
+    if(!el) return;
+    _wizardSelectedVal = el.value;
+    const cnt = document.getElementById('wizCharCount');
+    if(cnt){
+      const len = el.value.trim().length;
+      cnt.textContent = len + ' / 80 min';
+      cnt.style.color = len >= 80 ? 'var(--green)' : 'var(--amber)';
+    }
+  }
+
   // Bind wizard functions to window for CSP compliance
   window.checkWizardStatus = checkWizardStatus;
   window.renderWizardStep = renderWizardStep;
@@ -1563,6 +1591,7 @@
   window.renderWizardCelebration = renderWizardCelebration;
   window.wizardClose = wizardClose;
   window.wizardDismiss = wizardDismiss;
+  window.onWizardTextareaInput = onWizardTextareaInput;
 
   /* ════ MAIN PORTAL BOOTSTRAP ════ */
   async function loadPortal(){
@@ -1609,20 +1638,35 @@
       try{ prefillAccountSettings(); }catch(err){ console.warn("prefillAccountSettings err:", err); }
       try{ populateApplyAnother(); }catch(err){ console.warn("populateApplyAnother err:", err); }
 
-      // Determine the canonical status (Accepted on ANY application wins, case-insensitive).
-      const acceptedApp=(_apps||[]).find(a=> (a.status||'').toLowerCase()==='accepted');
-      const latestApp=_apps[0]||null;
-      const latestJobApp=_jobApps[0]||null;
-      let rawStatus = acceptedApp ? 'Accepted' : (latestApp ? latestApp.status : (latestJobApp ? '__JOB_ONLY__' : ''));
-      if(rawStatus && rawStatus.toLowerCase()==='accepted') rawStatus = 'Accepted';
-      else if(rawStatus && rawStatus.toLowerCase()==='rejected') rawStatus = 'Rejected';
-      else if(rawStatus && rawStatus.toLowerCase()==='on hold') rawStatus = 'On Hold';
-      else if(rawStatus && rawStatus.toLowerCase()==='under review') rawStatus = 'Under Review';
-      else if(rawStatus && rawStatus.toLowerCase()==='apply pending') rawStatus = 'Apply Pending';
-      else if(rawStatus && rawStatus.toLowerCase()==='selected') rawStatus = 'Selected';
-      else if(rawStatus && rawStatus.toLowerCase()==='enrollment pending') rawStatus = 'Enrollment Pending';
-      else if(rawStatus && rawStatus.toLowerCase()==='enrolled') rawStatus = 'Enrolled';
-      else if(rawStatus && rawStatus.toLowerCase()==='paid-enrolled') rawStatus = 'Paid-Enrolled';
+      // Canonical 5-stage lifecycle state evaluation from server
+      _flowState = data.flow_state || null;
+      let rawStatus = '';
+      if(_flowState && _flowState.stage){
+        const st = _flowState.stage;
+        if(st === 'CONFIRMED') rawStatus = 'Accepted';
+        else if(st === 'PAYMENT_PENDING') rawStatus = 'Enrolled';
+        else if(st === 'SELECTED') rawStatus = 'Selected';
+        else if(st === 'UNDER_REVIEW') rawStatus = 'Under Review';
+        else if(st === 'APPLICATION_REQUIRED') rawStatus = 'Apply Pending';
+        else if(st === 'REJECTED') rawStatus = 'Rejected';
+      }
+
+      if(!rawStatus){
+        // Fallback: determine status from applications / jobs
+        const acceptedApp=(_apps||[]).find(a=> (a.status||'').toLowerCase()==='accepted');
+        const latestApp=_apps[0]||null;
+        const latestJobApp=_jobApps[0]||null;
+        rawStatus = acceptedApp ? 'Accepted' : (latestApp ? latestApp.status : (latestJobApp ? '__JOB_ONLY__' : ''));
+        if(rawStatus && rawStatus.toLowerCase()==='accepted') rawStatus = 'Accepted';
+        else if(rawStatus && rawStatus.toLowerCase()==='rejected') rawStatus = 'Rejected';
+        else if(rawStatus && rawStatus.toLowerCase()==='on hold') rawStatus = 'On Hold';
+        else if(rawStatus && rawStatus.toLowerCase()==='under review') rawStatus = 'Under Review';
+        else if(rawStatus && rawStatus.toLowerCase()==='apply pending') rawStatus = 'Apply Pending';
+        else if(rawStatus && rawStatus.toLowerCase()==='selected') rawStatus = 'Selected';
+        else if(rawStatus && rawStatus.toLowerCase()==='enrollment pending') rawStatus = 'Enrollment Pending';
+        else if(rawStatus && rawStatus.toLowerCase()==='enrolled') rawStatus = 'Enrolled';
+        else if(rawStatus && rawStatus.toLowerCase()==='paid-enrolled') rawStatus = 'Paid-Enrolled';
+      }
       _status = rawStatus;
 
       // Tab visibility
@@ -1867,17 +1911,22 @@
       showOvBlock('');
     }else if(_status==='Apply Pending'||_status==='Under Review'){
       buildStepBar('overviewStepBar','Under Review');
-      // "Complete your interview" is the focal action only when an interview is
-      // actually available to take and not already done; otherwise it's under review.
-      const ivAvailable=_ivStatus&&_ivStatus.enabled&&(_ivStatus.can_start||_ivStatus.in_progress);
-      if(ivAvailable&&!ivDone()){
-        nsIcon.innerHTML='&#129302;';nsTitle.textContent='Complete your virtual interview';
-        nsMsg.textContent='A short, AI-guided screening (~5 questions) tailored to your domain. Completing it helps our mentors review you faster.';
-        nsAction.innerHTML=btnTab('interview',_ivStatus.in_progress?'Resume Interview':'Start Virtual Interview','fa-robot');
-      }else{
-        nsIcon.innerHTML='&#128269;';nsTitle.textContent='Your application is under review';
-        nsMsg.textContent='Mentors are evaluating your application. We\'ll email you the moment your status changes.';
-        if(_paidEligible)nsSoft.innerHTML='<a href="/program" '+actAttr('click','dbertGA',['paid_program_cta_click',{source:'portal_overview_under_review'}])+'>Want a guaranteed placement opportunity without waiting on selection? Explore the paid fast-track &rarr;</a>';
+      if(_flowState && _flowState.stage === 'APPLICATION_REQUIRED'){
+        nsIcon.innerHTML='&#128221;';
+        nsTitle.textContent='Internship Application Required';
+        nsMsg.textContent='Please submit your domain selection, academic profile, and statement of purpose to proceed.';
+        nsAction.innerHTML='<button class="btn-primary" ' + actAttr('click','checkWizardStatus',[]) + ' style="justify-content:center;"><i class="fas fa-file-pen"></i>&nbsp; Complete Application</button>';
+      } else {
+        const ivAvailable=_ivStatus&&_ivStatus.enabled&&(_ivStatus.can_start||_ivStatus.in_progress);
+        if(ivAvailable&&!ivDone()){
+          nsIcon.innerHTML='&#129302;';nsTitle.textContent='Complete your virtual interview';
+          nsMsg.textContent='A short, AI-guided screening (~5 questions) tailored to your domain. Completing it helps our mentors review you faster.';
+          nsAction.innerHTML=btnTab('interview',_ivStatus.in_progress?'Resume Interview':'Start Virtual Interview','fa-robot');
+        }else{
+          nsIcon.innerHTML='&#128269;';nsTitle.textContent='Your application is under review';
+          nsMsg.textContent='Mentors are evaluating your application. We\'ll email you the moment your status changes.';
+          if(_paidEligible)nsSoft.innerHTML='<a href="/program" '+actAttr('click','dbertGA',['paid_program_cta_click',{source:'portal_overview_under_review'}])+'>Want a guaranteed placement opportunity without waiting on selection? Explore the paid fast-track &rarr;</a>';
+        }
       }
       showOvBlock('');
     }else if(_status==='On Hold'){
@@ -1963,8 +2012,9 @@
       }).join('');
     }
     const dSel=document.getElementById('ovDomainSelect');
-    if(dSel && _intern && _intern.domain && _intern.domain!=='Undeclared'){
-      dSel.value=_intern.domain;
+    if(dSel){
+      const effDomain = (_flowState && _flowState.domain) || (_intern && _intern.domain && _intern.domain !== 'Undeclared' ? _intern.domain : '');
+      if(effDomain) dSel.value = effDomain;
     }
     _calMonths=[...new Set(_mondays.map(d=>d.slice(0,7)))].sort();_calIdx=0;bindCalKeys();renderCalendar();
   }
