@@ -771,7 +771,7 @@ def verify_turnstile(token, ip):
         return True
 
 def get_db():
-    target_db = os.environ.get("DB_FILE") or DB_FILE
+    target_db = (app.config.get("DATABASE") if app and hasattr(app, "config") else None) or os.environ.get("DB_FILE") or DB_FILE
     conn = sqlite3.connect(target_db, timeout=15)
     conn.row_factory = sqlite3.Row
     # Production: with multiple Gunicorn workers sharing one SQLite file, wait for locks
@@ -2402,76 +2402,103 @@ def init_db():
                     """, (cid, day_num, json.dumps(ch["quiz"])))
 
         # ── Live Server Dynamic Reconciliation & Backfill ──
-        # 1. Backfill applications for any accepted enrollment lacking an application
-        accepted_enrs = conn.execute("""
-            SELECT e.* FROM enrollments e
-            WHERE e.payment_status = 'Accepted'
-            AND LOWER(e.email) NOT IN (SELECT LOWER(email) FROM applications WHERE status = 'Accepted')
-        """).fetchall()
-        for ae in accepted_enrs:
-            ae_email = (ae["email"] or "").strip().lower()
-            ae_domain = ae["domain"] if ae["domain"] in VALID_DOMAINS else "AI Agent Development"
-            acct_m = conn.execute("SELECT * FROM intern_accounts WHERE LOWER(email)=? LIMIT 1", (ae_email,)).fetchone()
-            cur_a = conn.execute("""
-                INSERT INTO applications
-                (name, email, phone, city, college, course, semester, year_of_passing,
-                 domain, why_join, status, source, created_at, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            """, (ae["name"] or (acct_m["name"] if acct_m else "Intern"), ae_email,
-                  ae["phone"] or (acct_m["phone"] if acct_m else "Not Provided"),
-                  ae["city"] or "Remote", ae["college"] or "Student", ae["course"] or "B.Tech",
-                  ae["semester"] or "6", ae["year_of_passing"] or "2026",
-                  ae_domain, "Confirmed enrollment via deposit payment.", STATUS_ACCEPTED,
-                  "backfill", ae["created_at"] or now_str(), now_str()))
-            new_app_id = cur_a.lastrowid
-            conn.execute("UPDATE enrollments SET application_id=?, updated_at=? WHERE id=?", (new_app_id, now_str(), ae["id"]))
-            if acct_m:
-                conn.execute("UPDATE intern_accounts SET application_id=?, domain=?, updated_at=? WHERE id=?", (new_app_id, ae_domain, now_str(), acct_m["id"]))
+        try:
+            # 1. Backfill applications for any accepted enrollment lacking an application
+            accepted_enrs = conn.execute("""
+                SELECT e.* FROM enrollments e
+                WHERE e.payment_status = 'Accepted'
+                AND LOWER(e.email) NOT IN (SELECT LOWER(email) FROM applications WHERE status = 'Accepted')
+            """).fetchall()
+            for ae in accepted_enrs:
+                try:
+                    ae_email = (ae["email"] or "").strip().lower()
+                    ae_domain = ae["domain"] if ae["domain"] in VALID_DOMAINS else "AI Agent Development"
+                    acct_m = conn.execute("SELECT * FROM intern_accounts WHERE LOWER(email)=? LIMIT 1", (ae_email,)).fetchone()
+                    existing_app = conn.execute("SELECT id FROM applications WHERE LOWER(email)=? ORDER BY id DESC LIMIT 1", (ae_email,)).fetchone()
+                    if existing_app:
+                        conn.execute("UPDATE applications SET status=?, domain=?, updated_at=? WHERE id=?",
+                                     (STATUS_ACCEPTED, ae_domain, now_str(), existing_app["id"]))
+                        new_app_id = existing_app["id"]
+                    else:
+                        cur_a = conn.execute("""
+                            INSERT INTO applications
+                            (name, email, phone, city, college, course, semester, year_of_passing,
+                             domain, why_join, status, source, created_at, updated_at)
+                            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        """, (ae["name"] or (acct_m["name"] if acct_m else "Intern"), ae_email,
+                              ae["phone"] or (acct_m["phone"] if acct_m else "Not Provided"),
+                              ae["city"] or "Remote", ae["college"] or "Student", ae["course"] or "B.Tech",
+                              ae["semester"] or "6", ae["year_of_passing"] or "2026",
+                              ae_domain, "Confirmed enrollment via deposit payment.", STATUS_ACCEPTED,
+                              "backfill", ae["created_at"] or now_str(), now_str()))
+                        new_app_id = cur_a.lastrowid
+                    conn.execute("UPDATE enrollments SET application_id=?, updated_at=? WHERE id=?", (new_app_id, now_str(), ae["id"]))
+                    if acct_m:
+                        conn.execute("UPDATE intern_accounts SET application_id=?, domain=?, updated_at=? WHERE id=?", (new_app_id, ae_domain, now_str(), acct_m["id"]))
+                except Exception as ex_ae:
+                    log_error("init_db_ae_backfill", ex_ae)
 
-        # 2. Backfill applications for unverified payments lacking an application
-        pending_enrs = conn.execute("""
-            SELECT e.* FROM enrollments e
-            WHERE (e.payment_screenshot IS NOT NULL AND e.payment_screenshot != '')
-            AND e.payment_status = 'Pending Verification'
-            AND LOWER(e.email) NOT IN (SELECT LOWER(email) FROM applications)
-        """).fetchall()
-        for pe in pending_enrs:
-            pe_email = (pe["email"] or "").strip().lower()
-            pe_domain = pe["domain"] if pe["domain"] in VALID_DOMAINS else "AI Agent Development"
-            acct_m = conn.execute("SELECT * FROM intern_accounts WHERE LOWER(email)=? LIMIT 1", (pe_email,)).fetchone()
-            cur_p = conn.execute("""
-                INSERT INTO applications
-                (name, email, phone, city, college, course, semester, year_of_passing,
-                 domain, why_join, status, source, created_at, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            """, (pe["name"] or (acct_m["name"] if acct_m else "Intern"), pe_email,
-                  pe["phone"] or (acct_m["phone"] if acct_m else "Not Provided"),
-                  pe["city"] or "Remote", pe["college"] or "Student", pe["course"] or "B.Tech",
-                  pe["semester"] or "6", pe["year_of_passing"] or "2026",
-                  pe_domain, "Uploaded enrollment deposit payment screenshot.", STATUS_ENROLLMENT_PENDING,
-                  "backfill", pe["created_at"] or now_str(), now_str()))
-            new_app_id = cur_p.lastrowid
-            conn.execute("UPDATE enrollments SET application_id=?, updated_at=? WHERE id=?", (new_app_id, now_str(), pe["id"]))
-            if acct_m:
-                conn.execute("UPDATE intern_accounts SET application_id=?, domain=?, updated_at=? WHERE id=?", (new_app_id, pe_domain, now_str(), acct_m["id"]))
+            # 2. Backfill applications for unverified payments lacking an application
+            pending_enrs = conn.execute("""
+                SELECT e.* FROM enrollments e
+                WHERE (e.payment_screenshot IS NOT NULL AND e.payment_screenshot != '')
+                AND e.payment_status = 'Pending Verification'
+                AND LOWER(e.email) NOT IN (SELECT LOWER(email) FROM applications)
+            """).fetchall()
+            for pe in pending_enrs:
+                try:
+                    pe_email = (pe["email"] or "").strip().lower()
+                    pe_domain = pe["domain"] if pe["domain"] in VALID_DOMAINS else "AI Agent Development"
+                    acct_m = conn.execute("SELECT * FROM intern_accounts WHERE LOWER(email)=? LIMIT 1", (pe_email,)).fetchone()
+                    existing_app = conn.execute("SELECT id FROM applications WHERE LOWER(email)=? ORDER BY id DESC LIMIT 1", (pe_email,)).fetchone()
+                    if existing_app:
+                        conn.execute("UPDATE applications SET domain=?, updated_at=? WHERE id=?",
+                                     (pe_domain, now_str(), existing_app["id"]))
+                        new_app_id = existing_app["id"]
+                    else:
+                        cur_p = conn.execute("""
+                            INSERT INTO applications
+                            (name, email, phone, city, college, course, semester, year_of_passing,
+                             domain, why_join, status, source, created_at, updated_at)
+                            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        """, (pe["name"] or (acct_m["name"] if acct_m else "Intern"), pe_email,
+                              pe["phone"] or (acct_m["phone"] if acct_m else "Not Provided"),
+                              pe["city"] or "Remote", pe["college"] or "Student", pe["course"] or "B.Tech",
+                              pe["semester"] or "6", pe["year_of_passing"] or "2026",
+                              pe_domain, "Uploaded enrollment deposit payment screenshot.", STATUS_ENROLLMENT_PENDING,
+                              "backfill", pe["created_at"] or now_str(), now_str()))
+                        new_app_id = cur_p.lastrowid
+                    conn.execute("UPDATE enrollments SET application_id=?, updated_at=? WHERE id=?", (new_app_id, now_str(), pe["id"]))
+                    if acct_m:
+                        conn.execute("UPDATE intern_accounts SET application_id=?, domain=?, updated_at=? WHERE id=?", (new_app_id, pe_domain, now_str(), acct_m["id"]))
+                except Exception as ex_pe:
+                    log_error("init_db_pe_backfill", ex_pe)
 
-        # 3. Auto-enroll all accepted interns into their domain course
-        accepted_interns = conn.execute("""
-            SELECT DISTINCT ia.id, COALESCE(NULLIF(ia.domain, 'Undeclared'), NULLIF(enr.domain, 'Undeclared'), NULLIF(app.domain, 'Undeclared'), 'AI Agent Development') AS effective_domain
-            FROM intern_accounts ia
-            LEFT JOIN enrollments enr ON LOWER(ia.email) = LOWER(enr.email)
-            LEFT JOIN applications app ON LOWER(ia.email) = LOWER(app.email)
-            WHERE enr.payment_status = 'Accepted' OR app.status = 'Accepted'
-        """).fetchall()
-        for ai in accepted_interns:
-            eff_domain = ai["effective_domain"]
-            if eff_domain in VALID_DOMAINS:
-                auto_enroll_intern_in_domain_courses(conn, ai["id"], eff_domain)
+            # 3. Auto-enroll all accepted interns into their domain course
+            accepted_interns = conn.execute("""
+                SELECT DISTINCT ia.id, COALESCE(NULLIF(ia.domain, 'Undeclared'), NULLIF(enr.domain, 'Undeclared'), NULLIF(app.domain, 'Undeclared'), 'AI Agent Development') AS effective_domain
+                FROM intern_accounts ia
+                LEFT JOIN enrollments enr ON LOWER(ia.email) = LOWER(enr.email)
+                LEFT JOIN applications app ON LOWER(ia.email) = LOWER(app.email)
+                WHERE enr.payment_status = 'Accepted' OR app.status = 'Accepted'
+            """).fetchall()
+            for ai in accepted_interns:
+                try:
+                    eff_domain = ai["effective_domain"]
+                    if ai["id"] and eff_domain in VALID_DOMAINS:
+                        auto_enroll_intern_in_domain_courses(conn, ai["id"], eff_domain)
+                except Exception as ex_ai:
+                    log_error("init_db_ai_enroll", ex_ai)
 
-        conn.commit()
+            conn.commit()
+        except Exception as ex_reconcile:
+            log_error("init_db_reconciliation_total", ex_reconcile)
 
 
-init_db()
+try:
+    init_db()
+except Exception as e:
+    log_error("init_db_startup_toplevel", e)
 
 
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
