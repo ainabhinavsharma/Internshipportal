@@ -6,11 +6,13 @@ import os
 import tempfile
 import pytest
 
+import gc
+
 # Configure environment for testing before importing app
 os.environ["FLASK_DEBUG"] = "true"
 os.environ["TESTING"] = "true"
-import tempfile
-_temp_db_fd, _temp_db_path = tempfile.mkstemp()
+_temp_db_fd, _temp_db_path = tempfile.mkstemp(suffix=".db")
+os.close(_temp_db_fd)
 os.environ["DB_FILE"] = _temp_db_path
 
 from app import app, init_db, get_db
@@ -18,7 +20,8 @@ from app import app, init_db, get_db
 @pytest.fixture
 def client():
     # Use a temporary database for tests
-    db_fd, db_path = tempfile.mkstemp()
+    db_fd, db_path = tempfile.mkstemp(suffix=".db")
+    os.close(db_fd)
     app.config["TESTING"] = True
     app.config["DATABASE"] = db_path
     
@@ -38,8 +41,12 @@ def client():
     with app.test_client() as client:
         yield client
 
-    os.close(db_fd)
-    os.unlink(db_path)
+    gc.collect()
+    try:
+        if os.path.exists(db_path):
+            os.unlink(db_path)
+    except Exception:
+        pass
 
 def test_public_routes_accessible(client):
     """Ensure public pages don't require auth."""

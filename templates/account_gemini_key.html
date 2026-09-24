@@ -46,7 +46,7 @@
             {% if key_info %}
             <div style="font-size: 0.875rem; color: var(--tx-muted); margin-bottom: 1.5rem; background: var(--bg-app); padding: 0.85rem; border-radius: var(--r-sm);">
                 <div>Validated At: <strong style="color: var(--tx-head);">{{ key_info.validated_at or 'N/A' }}</strong></div>
-                <div>Connected Models: <strong style="color: var(--tx-head);">Gemini 2.5 Flash / 2.0 Flash</strong></div>
+                <div>Connected Models: <strong style="color: var(--tx-head);">Gemini 3.5 Flash-Lite / 3.5 Flash</strong></div>
             </div>
             {% endif %}
 
@@ -54,7 +54,7 @@
                 <div class="form-group">
                     <label for="apiKey">Enter Google Gemini API Key</label>
                     <div style="position: relative; display: flex; align-items: center;">
-                        <input type="password" id="apiKey" name="api_key" placeholder="Enter key (e.g. AIzaSy... or AQ...)" required style="padding-right: 2.75rem;">
+                        <input type="password" id="apiKey" name="api_key" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-form-type="other" placeholder="Enter key (e.g. AIzaSy... or AQ...)" required style="padding-right: 2.75rem;">
                         <button type="button" data-act-click="toggleKeyVis" style="position: absolute; right: 0.6rem; background: none; border: none; cursor: pointer; color: var(--tx-muted); padding: 0.4rem; font-size: 1rem;" aria-label="Toggle key visibility" title="Show/Hide API Key">
                             <i class="fa-regular fa-eye" id="toggleKeyIcon"></i>
                         </button>

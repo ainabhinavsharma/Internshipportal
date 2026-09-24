@@ -867,6 +867,16 @@ def seed():
                     (course_id, day_num, json.dumps(day_data["quiz"]), published_at)
                 )
 
+            # Seed Full Stack, AI Agent, and Python Automation courses
+            from deploy.seed_all_courses import (
+                seed_course,
+                get_full_stack_curriculum,
+                get_ai_agent_curriculum,
+                get_python_automation_curriculum
+            )
+            for c_getter in [get_full_stack_curriculum, get_ai_agent_curriculum, get_python_automation_curriculum]:
+                seed_course(conn, c_getter())
+
             # 5. Seed Lifecycle Interns (Covering all stages of the intern lifecycle)
             post_row = conn.execute("SELECT id FROM posts WHERE company_id=? AND title=?", (company_id, post_title)).fetchone()
             aivara_post_id = post_row["id"] if post_row else None

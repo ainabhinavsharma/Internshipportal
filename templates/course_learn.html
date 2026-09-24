@@ -52,14 +52,26 @@
                 Enter your Google Gemini API key to unlock unthrottled AI tutoring. We test available
                 models live against Google's API before saving.
             </p>
-            <div class="field">
-                <label for="modalApiKeyInput">Gemini API key</label>
-                <input type="password" id="modalApiKeyInput" placeholder="AIzaSy…" style="font-family:var(--f-mono)">
-                <div class="hint" style="text-align:right">
-                    <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener" class="t-gold">
-                        Get a free key from Google AI Studio ↗</a>
+            <form autocomplete="off" onsubmit="return false;" style="margin:0;padding:0;">
+                <div class="field">
+                    <label for="modalApiKeyInput">Gemini API key</label>
+                    <div style="position:relative; display:flex; align-items:center;">
+                        <input type="password" id="modalApiKeyInput" name="gemini_api_key_novault"
+                               autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                               data-lpignore="true" data-1p-ignore="true" data-form-type="other"
+                               placeholder="AIzaSy…" style="font-family:var(--f-mono); padding-right:40px;">
+                        <button type="button" data-act-click="toggleModalApiKeyVisibility"
+                                style="position:absolute; right:10px; background:none; border:none; color:var(--tx-muted); cursor:pointer; font-size:14px; padding:4px;"
+                                aria-label="Toggle key visibility">
+                            <i class="fa-regular fa-eye" id="modalEyeIcon"></i>
+                        </button>
+                    </div>
+                    <div class="hint" style="text-align:right">
+                        <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener" class="t-gold">
+                            Get a free key from Google AI Studio ↗</a>
+                    </div>
                 </div>
-            </div>
+            </form>
             <div id="modalStatusMsg" class="alert" style="display:none"></div>
             <div class="modal-foot">
                 <button data-act-click="closeGeminiModal" class="btn btn-ghost btn-sm">Cancel</button>
@@ -97,15 +109,17 @@
                     Welcome to the AI Classroom. Select a subtopic from the sidebar or ask a question to begin.
                 </div>
             </div>
-            <div class="chat-input-bar">
+            <form autocomplete="off" onsubmit="return false;" class="chat-input-bar" style="margin:0;">
                 <label for="userMessage" class="sr-only">Message your AI tutor</label>
-                <input type="text" id="userMessage"
+                <input type="text" id="userMessage" name="chat_prompt_query"
+                       autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                       data-lpignore="true" data-1p-ignore="true" data-form-type="other"
                        placeholder="Ask your AI tutor a question or request code examples…"
                        data-act-keypress="sendMessage" data-key-keypress="Enter">
-                <button class="btn btn-ai" data-act-click="sendMessage">
+                <button class="btn btn-ai" type="button" data-act-click="sendMessage">
                     <i class="fa-solid fa-paper-plane"></i> Send
                 </button>
-            </div>
+            </form>
         </main>
 
         <!-- Key takeaways & quiz CTA -->
@@ -194,8 +208,26 @@
                     // Render chat history
                     const history = document.getElementById('chatHistory');
                     history.innerHTML = '';
-                    if (data.chats && data.chats.length > 0) {
-                        data.chats.forEach(c => {
+                    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                    const phoneRegex = /^\+?\d{10,14}$/;
+
+                    // Filter out accidental browser-autofilled entries from display
+                    const cleanChats = (data.chats || []).filter((c, idx, arr) => {
+                        const m = (c.message || '').trim();
+                        if (c.role === 'user' && (emailRegex.test(m) || phoneRegex.test(m) || m === 'Pulluri Bhargavi')) {
+                            return false;
+                        }
+                        if (c.role === 'assistant' && idx > 0) {
+                            const prev = (arr[idx - 1].message || '').trim();
+                            if (emailRegex.test(prev) || phoneRegex.test(prev) || prev === 'Pulluri Bhargavi') {
+                                return false;
+                            }
+                        }
+                        return true;
+                    });
+
+                    if (cleanChats.length > 0) {
+                        cleanChats.forEach(c => {
                             const div = document.createElement('div');
                             div.className = `chat-bubble ${c.role}`;
                             div.textContent = c.message;
@@ -218,6 +250,14 @@
         const input = document.getElementById('userMessage');
         const msg = input.value.trim();
         if (!msg) return;
+
+        // Block accidental submission of browser autofilled email or phone number
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        const phoneRegex = /^\+?\d{10,14}$/;
+        if (emailRegex.test(msg) || phoneRegex.test(msg)) {
+            input.value = '';
+            return;
+        }
 
         if (!activeSubtopicId) {
             const firstBtn = document.querySelector('.subtopic-btn');
@@ -251,15 +291,78 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message: msg })
         })
-        .then(r => r.json())
-        .then(data => {
+        .then(async (r) => {
             const thinkEl = document.getElementById('aiThinking');
             if (thinkEl) thinkEl.remove();
 
+            const contentType = r.headers.get('content-type') || '';
+            // If the server returned a JSON error response (e.g. 400/401/429)
+            if (contentType.includes('application/json') || (!r.ok && !contentType.includes('text/event-stream'))) {
+                let data = {};
+                try { data = await r.json(); } catch (e) {}
+                const aiDiv = document.createElement('div');
+                aiDiv.className = 'chat-bubble assistant';
+                aiDiv.textContent = data.message || data.reply || 'Error generating AI response.';
+                if (data.requires_key) {
+                    const btn = document.createElement('button');
+                    btn.style = 'display:inline-block;margin-top:8px;padding:6px 12px;background:var(--accent);color:#000;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;';
+                    btn.textContent = '🔑 Connect / Update Gemini Key';
+                    btn.onclick = openGeminiModal;
+                    aiDiv.appendChild(document.createElement('br'));
+                    aiDiv.appendChild(btn);
+                }
+                history.appendChild(aiDiv);
+                history.scrollTop = history.scrollHeight;
+                return;
+            }
+
+            // Real-time SSE streaming reader
             const aiDiv = document.createElement('div');
             aiDiv.className = 'chat-bubble assistant';
-            aiDiv.textContent = data.message || data.reply || 'Error generating AI response.';
             history.appendChild(aiDiv);
+
+            const reader = r.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let buffer = '';
+            let fullText = '';
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop(); // keep partial line in buffer
+
+                for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (trimmed.startsWith('data: ')) {
+                        try {
+                            const parsed = JSON.parse(trimmed.slice(6));
+                            if (parsed.chunk) {
+                                fullText += parsed.chunk;
+                                aiDiv.textContent = fullText;
+                                history.scrollTop = history.scrollHeight;
+                            }
+                            if (parsed.error) {
+                                aiDiv.textContent = parsed.error;
+                                if (parsed.requires_key) {
+                                    const btn = document.createElement('button');
+                                    btn.style = 'display:inline-block;margin-top:8px;padding:6px 12px;background:var(--accent);color:#000;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;';
+                                    btn.textContent = '🔑 Connect / Update Gemini Key';
+                                    btn.onclick = openGeminiModal;
+                                    aiDiv.appendChild(document.createElement('br'));
+                                    aiDiv.appendChild(btn);
+                                }
+                            }
+                        } catch (e) {
+                            // ignore parse error on keepalive lines
+                        }
+                    }
+                }
+            }
+            if (!fullText && !aiDiv.textContent) {
+                aiDiv.textContent = 'No response received from tutor.';
+            }
             history.scrollTop = history.scrollHeight;
         })
         .catch(err => {
@@ -270,6 +373,7 @@
             aiDiv.className = 'chat-bubble assistant';
             aiDiv.textContent = 'Network or server error while connecting to Gemini AI.';
             history.appendChild(aiDiv);
+            history.scrollTop = history.scrollHeight;
         });
     }
 
@@ -328,8 +432,39 @@
         });
     }
 
+    function toggleModalApiKeyVisibility() {
+        const input = document.getElementById('modalApiKeyInput');
+        const icon = document.getElementById('modalEyeIcon');
+        if (!input || !icon) return;
+        if (input.type === 'password') {
+            input.type = 'text';
+            icon.className = 'fa-solid fa-eye-slash';
+        } else {
+            input.type = 'password';
+            icon.className = 'fa-regular fa-eye';
+        }
+    }
+    window.toggleModalApiKeyVisibility = toggleModalApiKeyVisibility;
+
+    // Sanitize chat input against browser autofill
+    function sanitizeChatInput() {
+        const input = document.getElementById('userMessage');
+        if (!input) return;
+        const v = input.value.trim();
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        const phoneRegex = /^\+?\d{10,14}$/;
+        if (v && (emailRegex.test(v) || phoneRegex.test(v))) {
+            input.value = '';
+        }
+    }
+    document.addEventListener('DOMContentLoaded', sanitizeChatInput);
+    window.addEventListener('load', sanitizeChatInput);
+    setTimeout(sanitizeChatInput, 150);
+    setTimeout(sanitizeChatInput, 500);
+
     // Auto-load first subtopic if present on DOM ready
     window.addEventListener('load', () => {
+        sanitizeChatInput();
         const firstBtn = document.querySelector('.subtopic-btn');
         if (firstBtn) {
             const subId = parseInt(firstBtn.getAttribute('data-subtopic-id'));

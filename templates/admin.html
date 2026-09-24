@@ -879,10 +879,18 @@
       const pill= r.met_threshold
         ? '<span class="badge badge-green">&#10003; Met</span>'
         : '<span class="badge badge-red">&#9888; Below</span>';
+      const endInfo = r.end_date
+        ? `<div style="font-size:10px;color:var(--tx-muted);margin-top:2px;">
+             Ends: <strong>${escHtml(r.end_date)}</strong>
+             ${r.days_remaining > 0
+               ? `<span style="color:var(--green);font-weight:700;"> (${r.days_remaining}d left)</span>`
+               : '<span style="color:var(--amber);font-weight:700;"> (Ending today)</span>'}
+           </div>`
+        : '';
       return `<tr>
         <td><strong>${escHtml(r.name)}</strong><br/><span style="color:var(--tx-muted);font-size:11px;">${escHtml(r.email)}</span></td>
         <td style="font-size:12px;">${escHtml(r.domain)}</td>
-        <td style="font-size:12px;color:var(--tx-muted);">${escHtml(r.batch_label||'—')}</td>
+        <td style="font-size:12px;color:var(--tx-muted);">${escHtml(r.batch_label||'—')}${endInfo}</td>
         <td><strong>${r.current_week_hours}h ${r.current_week_mins_rem}m</strong></td>
         <td><div class="progress-mini"><div class="progress-mini-fill" style="width:${pct}%;background:${bc};"></div></div><span style="font-size:10px;color:var(--tx-muted);">${pct}%</span></td>
         <td>${pill}</td>

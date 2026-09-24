@@ -329,6 +329,7 @@
                   <div style="height:6px;background:rgba(255,255,255,0.08);border-radius:999px;overflow:hidden;">
                     <div id="ovAttProgressFill" style="height:100%;width:0%;background:linear-gradient(90deg,var(--green),var(--blue));transition:width 0.4s ease;"></div>
                   </div>
+                  <div id="internshipPeriodLabel" class="hidden" style="font-size:11px;color:var(--tx-muted);margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.06);"></div>
                 </div>
               </div>
               <button id="ovAttCardBtn" data-act-click="switchTab" data-arg-click='["cohorts"]' class="btn-tutor" style="background:transparent;border:1px solid var(--border);color:var(--tx-head);font-size:13px;padding:10px 16px;margin-top:8px;text-align:center;cursor:pointer;">
@@ -344,6 +345,7 @@
               <div class="info-row"><span class="info-label">Name</span><span class="info-value" id="infoName">&mdash;</span></div>
               <div class="info-row"><span class="info-label">Domain</span><span class="info-value" id="infoDomain">&mdash;</span></div>
               <div class="info-row"><span class="info-label">Joining Date</span><span class="info-value" id="infoJoining">&mdash;</span></div>
+              <div class="info-row"><span class="info-label">Internship End</span><span class="info-value" id="infoEndDate">&mdash;</span></div>
               <div class="info-row"><span class="info-label">Batch</span><span class="info-value" id="infoBatch">&mdash;</span></div>
               <div class="info-row"><span class="info-label">Email</span><span class="info-value" id="infoEmail">&mdash;</span></div>
             </div>
@@ -353,6 +355,7 @@
               <div class="info-row"><span class="info-label">Total Weeks Tracked</span><span class="info-value" id="summTotalWeeks">&mdash;</span></div>
               <div class="info-row"><span class="info-label">Weeks Met (10h+)</span><span class="info-value" id="summWeeksMet">&mdash;</span></div>
               <div class="info-row"><span class="info-label">Weeks Missed</span><span class="info-value" id="summWeeksMissed" style="color:var(--red);">&mdash;</span></div>
+              <div class="info-row"><span class="info-label">Period Status</span><span class="info-value" id="summPeriodStatus">&mdash;</span></div>
             </div>
           </div>
           <div class="glass-card">
@@ -816,8 +819,9 @@
   let _intern=null,_apps=[],_jobApps=[],_enr=null,_status='',_flowState=null,_ivStatus=null,_reapplyInfo=null;
   let _upiId='Q681021429@ybl',_upiAmount=499,_selectedFile=null,_paidEligible=false;
   let _currentJobAppId=null,_jobDepositFile=null;
-  let _joiningDate=null,_joiningDateStr='',_isUnlocked=false,_allWeeks=[];
+  let _joiningDate=null,_joiningDateStr='',_internshipEndDate=null,_internshipEndDateStr='',_isUnlocked=false,_allWeeks=[];
   let _attSummary={},_courseEnrs=[],_tasksCount=0,_totalCoins=0;
+  let _acceptedInit=false,_pingInterval=null,_countdownInterval=null;
   function badgeClass(s){const m={'Apply Pending':'badge-muted','Under Review':'badge-blue','On Hold':'badge-amber','Selected':'badge-gold','Selected - Pending Certifications':'badge-green','Pending-Certifications':'badge-gold','Shortlisted':'badge-blue','Hired':'badge-green','Applied':'badge-muted','Enrollment Pending':'badge-amber','Enrolled':'badge-blue','Accepted':'badge-green','Rejected':'badge-red','Paid-Enrolled':'badge-blue'};return m[s]||'badge-muted';}
 
   /* ════ SIDEBAR / TABS ════ */
@@ -1626,6 +1630,15 @@
       _paidEligible=!!data.paid_eligible;_reapplyInfo=data.reapply_info;
       _joiningDateStr=data.joining_date||(_enr&&_enr.joining_date)||'';
       _joiningDate=parseJoiningDate(_joiningDateStr);
+      _internshipEndDateStr=data.internship_end_date||'';
+      if(!_internshipEndDateStr && _joiningDateStr){
+        try{
+          const _jd=new Date(_joiningDateStr+'T00:00:00');
+          _jd.setDate(_jd.getDate()+60);
+          _internshipEndDateStr=_jd.toISOString().split('T')[0];
+        }catch(e){}
+      }
+      _internshipEndDate=_internshipEndDateStr?new Date(_internshipEndDateStr+'T23:59:59'):null;
 
       const nameEl = document.getElementById('internName');
       if(nameEl) nameEl.textContent=_intern.name||'Intern';
@@ -1816,7 +1829,23 @@
     if (attHoursEl) attHoursEl.textContent = hours + ' / 10.0 hrs';
     if (attFillEl) attFillEl.style.width = pct + '%';
 
-    if (hours < 10.0 || (_attSummary && _attSummary.status === 'Action Needed')) {
+    const isEnded = _internshipEndDate && (new Date() > _internshipEndDate);
+    if (isEnded) {
+      if (attBadgeEl) {
+        attBadgeEl.className = 'badge badge-muted';
+        attBadgeEl.style.background = 'rgba(255, 255, 255, 0.08)';
+        attBadgeEl.style.border = '1px solid rgba(255, 255, 255, 0.15)';
+        attBadgeEl.style.color = 'var(--tx-muted)';
+      }
+      if (attTextEl) attTextEl.innerHTML = `Period Completed`;
+      if (attCardBtnEl) {
+        attCardBtnEl.innerHTML = `<span>View Attendance Log →</span>`;
+        attCardBtnEl.style.background = 'transparent';
+        attCardBtnEl.style.border = '1px solid var(--border)';
+        attCardBtnEl.style.color = 'var(--tx-head)';
+        attCardBtnEl.style.fontWeight = '500';
+      }
+    } else if (hours < 10.0 || (_attSummary && _attSummary.status === 'Action Needed')) {
       if (attBadgeEl) {
         attBadgeEl.className = 'badge badge-gold';
         attBadgeEl.style.background = 'rgba(239, 68, 68, 0.18)';
@@ -2189,8 +2218,25 @@
     const nameEl = document.getElementById('infoName'); if(nameEl) nameEl.textContent=_intern.name||'—';
     const domEl  = document.getElementById('infoDomain'); if(domEl) domEl.textContent=_intern.domain||'—';
     const jnEl   = document.getElementById('infoJoining'); if(jnEl) jnEl.textContent=_joiningDateStr?fmtDate(_joiningDateStr):'—';
+    const endEl  = document.getElementById('infoEndDate'); if(endEl) endEl.textContent=_internshipEndDateStr?fmtDate(_internshipEndDateStr):'—';
     const btEl   = document.getElementById('infoBatch'); if(btEl) btEl.textContent=(_enr&&_enr.batch_label)||'—';
     const emEl   = document.getElementById('infoEmail'); if(emEl) emEl.textContent=_intern.email||'—';
+
+    const pLabel = document.getElementById('internshipPeriodLabel');
+    const pSumm = document.getElementById('summPeriodStatus');
+    if(_joiningDateStr && _internshipEndDateStr){
+      const isPast = _internshipEndDate && (new Date() > _internshipEndDate);
+      const daysLeft = _internshipEndDate ? Math.max(0, Math.ceil((_internshipEndDate - new Date()) / (1000*60*60*24))) : 0;
+      const periodHtml = `Internship Period: <strong>${fmtDate(_joiningDateStr)} &rarr; ${fmtDate(_internshipEndDateStr)}</strong> (${isPast ? '<span style="color:var(--amber);">Period Ended</span>' : '<span style="color:var(--green);">' + daysLeft + ' days left</span>'})`;
+      if(pLabel){
+        pLabel.innerHTML = periodHtml;
+        pLabel.classList.remove('hidden');
+      }
+      if(pSumm){
+        pSumm.innerHTML = isPast ? '<span style="color:var(--amber);font-weight:700;">Ended</span>' : `<span style="color:var(--green);font-weight:700;">Active (${daysLeft}d left)</span>`;
+      }
+    }
+
     if(_joiningDate){
       const opts={day:'numeric',month:'long',year:'numeric'};
       const msg=`Your classes begin on ${_joiningDate.toLocaleDateString('en-IN',opts)} at 6:00 PM. Get ready to learn!`;
@@ -2201,7 +2247,8 @@
     const lDot=document.getElementById('learnLockDot'); if(lDot) lDot.classList.toggle('hidden',_isUnlocked);
     if(_isUnlocked){onUnlock();renderTutorCard();}else{startCountdown();}
     loadAttendance();
-    if(_isUnlocked&&!_pingInterval){_pingInterval=setInterval(pingAttendance,3*60*1000);}
+    const isEnded = _internshipEndDate && (new Date() > _internshipEndDate);
+    if(_isUnlocked && !_pingInterval && !isEnded){_pingInterval=setInterval(pingAttendance,3*60*1000);}
   }
   async function loadAttendance(){
     try{
@@ -2235,7 +2282,8 @@
     const tU=document.getElementById('tutorUnlocked'); if(tU) tU.classList.remove('hidden');
     const llC=document.getElementById('learnLockedCard'); if(llC) llC.classList.add('hidden');
     const luW=document.getElementById('learnUnlockedWrap'); if(luW) luW.classList.remove('hidden');
-    if(!_pingInterval){_pingInterval=setInterval(pingAttendance,3*60*1000);}
+    const isEnded = _internshipEndDate && (new Date() > _internshipEndDate);
+    if(!_pingInterval && !isEnded){_pingInterval=setInterval(pingAttendance,3*60*1000);}
   }
   function renderTutorCard(){const pct=Math.round((_intern&&(_intern.learning_completion_pct||_intern.tutor_completion_pct))||0);const p=document.getElementById('tutorPct');if(p)p.textContent=pct+'%';const b=document.getElementById('tutorProgressBar');if(b)b.style.width=pct+'%';}
   function updateLiveCounter(mins){
@@ -2253,6 +2301,7 @@
     }
     const summEl=document.getElementById('summThisWeek');if(summEl)summEl.innerHTML=`${h}h ${m}m ${mins>=600?'<span style="color:var(--green);">&#10003;</span>':'<span style="color:var(--amber);">&#9888;</span>'}`;
   }
+  window.updateLiveCounter = updateLiveCounter;
   function renderAttHistory(weeks){
     const tbody=document.getElementById('attTableBody');
     if(!tbody)return;
@@ -2263,7 +2312,25 @@
     const wm=document.getElementById('summWeeksMet'); if(wm) wm.textContent=met;
     const ws=document.getElementById('summWeeksMissed'); if(ws) ws.textContent=missed;
   }
-  async function pingAttendance(){try{const res=await fetch('/attendance/ping',{method:'POST',credentials:'include'});const data=await res.json();if(data.status==='success'){updateLiveCounter(data.total_minutes);}}catch(e){}}
+  async function pingAttendance(){
+    if(_internshipEndDate && (new Date() > _internshipEndDate)){
+      if(_pingInterval){ clearInterval(_pingInterval); _pingInterval = null; }
+      return;
+    }
+    if(typeof window.sendAttendancePing === 'function'){
+      await window.sendAttendancePing();
+      return;
+    }
+    try{
+      const res=await fetch('/attendance/ping',{method:'POST',credentials:'include'});
+      const data=await res.json();
+      if(data.status==='success'){
+        updateLiveCounter(data.total_minutes);
+      } else if(data.reason === 'internship_ended'){
+        if(_pingInterval){ clearInterval(_pingInterval); _pingInterval = null; }
+      }
+    }catch(e){}
+  }
   let _allCourseProgress = [];
   let _selectedCourseId = null;
 

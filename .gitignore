@@ -13,7 +13,10 @@ env/
 .idea/
 .vscode/
 uploads/
+backups/
 scratch/
+.agent/
+*.csv
 
 # Python
 __pycache__/

@@ -1,5 +1,5 @@
 # Canonical app â€” promoted from templates/app.py on 2026-06-04
-from flask import Flask, render_template, request, jsonify, send_from_directory, Response, make_response, redirect, session, abort, g, has_request_context, flash
+from flask import Flask, render_template, request, jsonify, send_from_directory, Response, make_response, redirect, session, abort, g, has_request_context, flash, stream_with_context
 from urllib.parse import quote
 from markupsafe import Markup, escape
 import os
@@ -384,7 +384,7 @@ def _parse_gemini_keys():
     return keys
 
 GEMINI_API_KEYS         = _parse_gemini_keys()
-GEMINI_MODEL            = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL            = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")
 INTERVIEW_ENABLED       = os.environ.get("INTERVIEW_ENABLED", "true").lower() == "true"
 GITHUB_TOKEN            = os.environ.get("GITHUB_TOKEN", "").strip()
 GEMINI_TIMEOUT          = int(os.environ.get("GEMINI_TIMEOUT", "8"))    # seconds per call (was 30)
@@ -1543,6 +1543,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS attendance (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 intern_id INTEGER NOT NULL,
+                email TEXT,
                 week_start TEXT NOT NULL,
                 week_end   TEXT NOT NULL,
                 total_minutes INTEGER DEFAULT 0,
@@ -2321,6 +2322,9 @@ def init_db():
         # UP9.1: Add email_verified to intern_accounts
         ensure_column(conn, "intern_accounts", "email_verified", "INTEGER DEFAULT 0")
 
+        # Attendance tracking email column migration
+        ensure_column(conn, "attendance", "email", "TEXT")
+
         # UP1.1: Extend courses table schema
         for col, defn in [
             ("level", "TEXT DEFAULT 'Beginner'"),
@@ -2706,7 +2710,255 @@ def _extract_json(text):
     return None
 
 
-def _gemini_call(prompt, temperature=0.7, max_tokens=2048, start_ts=None, api_key=None):
+def _gemini_byok_call(prompt, api_key, temperature=0.7, max_tokens=2048, user_models=None):
+    """Call Google Gemini using the intern's own BYOK key with robust model fallback and error details.
+    Returns (response_text, error_message).
+    """
+    if not api_key:
+        return None, "No API key provided."
+
+    # Google's current active text-generation flash models in priority order
+    preferred_models = [
+        "gemini-3.5-flash-lite",
+        "gemini-3.5-flash",
+        "gemini-flash-latest",
+        "gemini-flash-lite-latest",
+        "gemini-3-flash-preview",
+        "gemini-3.8-flash",
+        "gemini-3.7-flash",
+        "gemini-3.1-flash-lite",
+        "gemini-2.5-flash",
+    ]
+
+    # Non-text models to strictly exclude (audio, TTS, image, transcribe, etc.)
+    non_text_keywords = ("tts", "audio", "image", "transcribe", "clip", "lyria", "robotics", "computer-use", "customtools")
+
+    models_to_try = []
+    # Always prioritize preferred active text models
+    for m in preferred_models:
+        if m not in models_to_try:
+            models_to_try.append(m)
+
+    # Also append any additional text-capable flash models the user's account supports
+    if user_models and isinstance(user_models, list):
+        for um in user_models:
+            if isinstance(um, str):
+                clean_um = um.replace("models/", "").strip()
+                if not any(k in clean_um.lower() for k in non_text_keywords):
+                    if "flash" in clean_um.lower() and clean_um not in models_to_try:
+                        models_to_try.append(clean_um)
+
+    body = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": temperature,
+            "maxOutputTokens": max_tokens,
+        },
+    }
+
+    last_error = "Unknown error connecting to Gemini API."
+    for clean_m in models_to_try:
+        clean_m = clean_m.replace("models/", "").strip()
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_m}:generateContent"
+        try:
+            # 25-second timeout for full tutoring responses
+            r = requests.post(url, params={"key": api_key}, json=body, timeout=25)
+            if r.status_code == 200:
+                data = r.json()
+                cands = data.get("candidates") or []
+                if cands:
+                    parts = cands[0].get("content", {}).get("parts", []) or []
+                    out = "".join(p.get("text", "") for p in parts).strip()
+                    if out:
+                        return out, None
+                last_error = f"Model {clean_m} returned an empty response."
+            else:
+                err_msg = ""
+                try:
+                    err_json = r.json().get("error", {})
+                    err_msg = err_json.get("message", "")
+                except Exception:
+                    pass
+                last_error = f"HTTP {r.status_code}: {err_msg or r.text[:200]}"
+                log_error("gemini-byok-call", f"Model {clean_m} failed: {last_error}")
+
+                # If this model returned 404 (retired), 429 (rate limited), 503,
+                # or 400 with modality/support error: try the NEXT model!
+                if r.status_code in (404, 429, 503) or "modalities" in err_msg.lower() or "not supported" in err_msg.lower():
+                    continue
+
+                # If 400 specifically due to invalid API key, fail immediately
+                if "api key not valid" in err_msg.lower() or r.status_code in (401, 403):
+                    return None, last_error
+
+                # For other model-specific errors, try the next model
+                continue
+        except requests.exceptions.Timeout:
+            last_error = f"Timeout reaching Google Gemini API with model {clean_m} (25s limit)."
+            log_error("gemini-byok-call", last_error)
+            continue
+        except Exception as e:
+            last_error = f"Connection error with model {clean_m}: {e}"
+            log_error("gemini-byok-call", e)
+            continue
+
+    return None, last_error
+
+
+def _gemini_stream_byok_call(prompt, api_key, temperature=0.7, max_tokens=2048, user_models=None):
+    """Generator that yields text chunks from Google Gemini using the intern's own BYOK key.
+    Yields (chunk_text, error_message).
+    When streaming tokens, error_message is None.
+    If an error occurs before streaming starts, yields (None, error_message).
+    """
+    if not api_key:
+        yield None, "No API key provided."
+        return
+
+    preferred_models = [
+        "gemini-3.5-flash-lite",
+        "gemini-3.5-flash",
+        "gemini-flash-latest",
+        "gemini-flash-lite-latest",
+        "gemini-3-flash-preview",
+        "gemini-3.8-flash",
+        "gemini-3.7-flash",
+        "gemini-3.1-flash-lite",
+        "gemini-2.5-flash",
+    ]
+
+    non_text_keywords = ("tts", "audio", "image", "transcribe", "clip", "lyria", "robotics", "computer-use", "customtools")
+
+    models_to_try = []
+    for m in preferred_models:
+        if m not in models_to_try:
+            models_to_try.append(m)
+
+    if user_models and isinstance(user_models, list):
+        for um in user_models:
+            if isinstance(um, str):
+                clean_um = um.replace("models/", "").strip()
+                if not any(k in clean_um.lower() for k in non_text_keywords):
+                    if "flash" in clean_um.lower() and clean_um not in models_to_try:
+                        models_to_try.append(clean_um)
+
+    body = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": temperature,
+            "maxOutputTokens": max_tokens,
+        },
+    }
+
+    last_error = "Unknown error connecting to Gemini API."
+    for clean_m in models_to_try:
+        clean_m = clean_m.replace("models/", "").strip()
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_m}:streamGenerateContent?alt=sse"
+        try:
+            r = requests.post(url, params={"key": api_key}, json=body, stream=True, timeout=30)
+            if r.status_code == 200:
+                has_yielded = False
+                for line in r.iter_lines():
+                    if line:
+                        decoded = line.decode('utf-8', errors='replace')
+                        if decoded.startswith("data: "):
+                            raw_json = decoded[6:].strip()
+                            if raw_json:
+                                try:
+                                    chunk_data = json.loads(raw_json)
+                                    cands = chunk_data.get("candidates") or []
+                                    if cands:
+                                        parts = cands[0].get("content", {}).get("parts", []) or []
+                                        for p in parts:
+                                            txt = p.get("text", "")
+                                            if txt:
+                                                has_yielded = True
+                                                yield txt, None
+                                except Exception:
+                                    pass
+                if has_yielded:
+                    return
+                last_error = f"Model {clean_m} returned an empty stream."
+            else:
+                err_msg = ""
+                try:
+                    err_json = r.json().get("error", {})
+                    err_msg = err_json.get("message", "")
+                except Exception:
+                    pass
+                last_error = f"HTTP {r.status_code}: {err_msg or r.text[:200]}"
+                log_error("gemini-stream-byok", f"Model {clean_m} failed: {last_error}")
+
+                if r.status_code in (404, 429, 503) or "modalities" in err_msg.lower() or "not supported" in err_msg.lower():
+                    continue
+
+                if "api key not valid" in err_msg.lower() or r.status_code in (401, 403):
+                    yield None, last_error
+                    return
+
+                continue
+        except requests.exceptions.Timeout:
+            last_error = f"Timeout reaching Google Gemini API with model {clean_m} (30s limit)."
+            log_error("gemini-stream-byok", last_error)
+            continue
+        except Exception as e:
+            last_error = f"Connection error with model {clean_m}: {e}"
+            log_error("gemini-stream-byok", e)
+            continue
+
+    yield None, last_error
+
+
+def _gemini_stream_server_call(prompt, temperature=0.7, max_tokens=2048):
+    """Generator that yields text chunks using server GEMINI_API_KEYS if available, or static fallback."""
+    if not (INTERVIEW_ENABLED and GEMINI_API_KEYS):
+        fallback_msg = (
+            "I'm excited to explore this concept with you! To unlock unlimited, unthrottled 1-on-1 AI tutoring with live code streaming and instant interactive checks, please connect your free Gemini API key using the button on top."
+        )
+        yield fallback_msg, None
+        return
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:streamGenerateContent?alt=sse"
+    body = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": temperature,
+            "maxOutputTokens": max_tokens,
+        },
+    }
+    for key in GEMINI_API_KEYS:
+        try:
+            r = requests.post(url, params={"key": key}, json=body, stream=True, timeout=25)
+            if r.status_code == 200:
+                has_yielded = False
+                for line in r.iter_lines():
+                    if line:
+                        decoded = line.decode('utf-8', errors='replace')
+                        if decoded.startswith("data: "):
+                            raw_json = decoded[6:].strip()
+                            if raw_json:
+                                try:
+                                    chunk_data = json.loads(raw_json)
+                                    cands = chunk_data.get("candidates") or []
+                                    if cands:
+                                        parts = cands[0].get("content", {}).get("parts", []) or []
+                                        for p in parts:
+                                            txt = p.get("text", "")
+                                            if txt:
+                                                has_yielded = True
+                                                yield txt, None
+                                except Exception:
+                                    pass
+                if has_yielded:
+                    return
+        except Exception as e:
+            log_error("gemini-stream-server", e)
+            continue
+
+    yield "Could not generate AI response from server keys. Please connect your free Gemini API key.", None
+
+
+def _gemini_call(prompt, temperature=0.7, max_tokens=2048, start_ts=None, api_key=None, plain_text=False):
     """Iterate the key list with failover. Single retry per key on 429/403/5xx/timeout
     before moving to the next key. Returns the model's text or None (never raises).
 
@@ -2717,37 +2969,21 @@ def _gemini_call(prompt, temperature=0.7, max_tokens=2048, start_ts=None, api_ke
     timeout is also clamped to the remaining budget so a single slow call can't blow
     past it. This is what keeps /interview/start fast even when every key is dead."""
     if api_key:
-        url = GEMINI_ENDPOINT.format(model=GEMINI_MODEL)
-        body = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "temperature": temperature,
-                "maxOutputTokens": max_tokens,
-            },
-        }
-        try:
-            r = requests.post(url, params={"key": api_key}, json=body, timeout=GEMINI_TIMEOUT)
-            if r.status_code == 200:
-                data = r.json()
-                cands = data.get("candidates") or []
-                if cands:
-                    parts = cands[0].get("content", {}).get("parts", []) or []
-                    out = "".join(p.get("text", "") for p in parts).strip()
-                    if out:
-                        return out
-        except Exception as e:
-            log_error("gemini-byok-call", e)
+        out, _ = _gemini_byok_call(prompt, api_key, temperature=temperature, max_tokens=max_tokens)
+        return out
 
     if not (INTERVIEW_ENABLED and GEMINI_API_KEYS):
         return None
     url = GEMINI_ENDPOINT.format(model=GEMINI_MODEL)
+    gen_config = {
+        "temperature": temperature,
+        "maxOutputTokens": max_tokens,
+    }
+    if not plain_text:
+        gen_config["responseMimeType"] = "application/json"
     body = {
         "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "temperature": temperature,
-            "maxOutputTokens": max_tokens,
-            "responseMimeType": "application/json",
-        },
+        "generationConfig": gen_config,
     }
     for idx, key in enumerate(GEMINI_API_KEYS):
         for attempt in range(2):  # original try + single retry per key
@@ -4482,8 +4718,24 @@ def course_subtopic_detail(course_id, subtopic_id):
             (enrollment["id"], subtopic_id)
         ).fetchall()
 
+        # Sanitize chat history against accidental browser-autofilled credentials/contact info
+        email_re = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
+        phone_re = re.compile(r'^\+?\d{10,14}$')
+        clean_chats = []
+        skip_next_assistant = False
+        for c in chats:
+            m = (c["message"] or "").strip()
+            if c["role"] == "user" and (email_re.match(m) or phone_re.match(m) or m in ("Pulluri Bhargavi",)):
+                skip_next_assistant = True
+                continue
+            if c["role"] == "assistant" and skip_next_assistant:
+                skip_next_assistant = False
+                continue
+            skip_next_assistant = False
+            clean_chats.append(dict(c))
+
         user_key_row = conn.execute(
-            "SELECT validated_at, available_models_json FROM user_api_keys WHERE intern_id = ?",
+            "SELECT validated_at, available_models_json FROM user_api_keys WHERE intern_id = ? ORDER BY id DESC LIMIT 1",
             (intern["id"],)
         ).fetchone()
 
@@ -4499,7 +4751,7 @@ def course_subtopic_detail(course_id, subtopic_id):
     return jsonify({
         "status": "success",
         "subtopic": subtopic_dict,
-        "chats": [dict(c) for c in chats],
+        "chats": clean_chats,
         "has_gemini_key": bool(user_key_row),
         "available_models_count": len(json.loads(user_key_row["available_models_json"])) if (user_key_row and user_key_row["available_models_json"]) else 0
     })
@@ -4517,6 +4769,12 @@ def course_subtopic_chat(course_id, subtopic_id):
     user_message = (data.get("message") or "").strip()
     if not user_message:
         return jsonify({"status": "error", "message": "Message body is required"}), 400
+
+    # Guard against accidental browser autofilled contact information
+    email_re = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
+    phone_re = re.compile(r'^\+?\d{10,14}$')
+    if email_re.match(user_message) or phone_re.match(user_message):
+        return jsonify({"status": "error", "message": "Please enter a question or topic to discuss with your AI tutor."}), 400
         
     with get_db() as conn:
         enrollment = conn.execute(
@@ -4528,7 +4786,14 @@ def course_subtopic_chat(course_id, subtopic_id):
             return jsonify({"status": "error", "message": "Not enrolled in this course"}), 403
             
         subtopic = conn.execute(
-            "SELECT * FROM course_subtopics WHERE id = ?", (subtopic_id,)
+            """
+            SELECT s.*, ch.title AS chapter_title, ch.day_number, c.title AS course_title
+            FROM course_subtopics s
+            JOIN course_chapters ch ON ch.id = s.chapter_id
+            JOIN courses c ON c.id = ch.course_id
+            WHERE s.id = ?
+            """,
+            (subtopic_id,)
         ).fetchone()
         
         if not subtopic:
@@ -4541,68 +4806,156 @@ def course_subtopic_chat(course_id, subtopic_id):
         )
         conn.commit()
 
+        # Fetch prior conversation for multi-step context (up to 14 turns)
         past_chats = conn.execute(
-            "SELECT role, message FROM course_subtopic_chats "
-            "WHERE enrollment_id = ? AND subtopic_id = ? ORDER BY id DESC LIMIT 6",
-            (enrollment["id"], subtopic_id)
+            """
+            SELECT role, message FROM course_subtopic_chats 
+            WHERE enrollment_id = ? AND subtopic_id = ? AND id < (
+              SELECT MAX(id) FROM course_subtopic_chats WHERE enrollment_id = ? AND subtopic_id = ? AND role = 'user'
+            ) ORDER BY id DESC LIMIT 14
+            """,
+            (enrollment["id"], subtopic_id, enrollment["id"], subtopic_id)
         ).fetchall()
-        
-        history_formatted = "\n".join([f"{c['role'].capitalize()}: {c['message']}" for c in reversed(past_chats)])
-        
+
+        email_re = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
+        phone_re = re.compile(r'^\+?\d{10,14}$')
+
+        valid_history = []
+        for c in reversed(past_chats):
+            m = (c["message"] or "").strip()
+            if not m or email_re.match(m) or phone_re.match(m) or m == "Pulluri Bhargavi":
+                continue
+            speaker = "Intern" if c["role"] == "user" else "AI Tutor"
+            valid_history.append(f"{speaker}: {m}")
+
+        history_section = (
+            "<conversation_history>\n" + "\n".join(valid_history) + "\n</conversation_history>\n"
+        ) if valid_history else "<conversation_history>\n(This is the beginning of the interactive tutoring session for this subtopic.)\n</conversation_history>\n"
+
+        takeaways = []
+        if subtopic["key_takeaways_json"]:
+            try:
+                takeaways = json.loads(subtopic["key_takeaways_json"])
+            except Exception:
+                takeaways = []
+        takeaways_formatted = "\n".join(f"- {t}" for t in takeaways) if takeaways else "- Master the core principles, syntax, and practical implementation of this topic."
+
+        intern_name = (intern.get("name") or "Intern").strip()
+        first_name = intern_name.split()[0] if intern_name else "there"
+        course_name = subtopic["course_title"] or "Engineering & Data Internship"
+        chapter_name = subtopic["chapter_title"] or "Core Curriculum"
+        day_num = subtopic["day_number"] or 1
+        subtopic_title = subtopic["title"]
+        subtopic_brief = subtopic["brief"]
+        guidelines = subtopic["prompt_seed"]
+
         prompt = (
-            f"You are a friendly, expert AI tutor explaining '{subtopic['title']}'.\n"
-            f"Topic Context: {subtopic['brief']}\n"
-            f"Prompt Seed / Guidelines: {subtopic['prompt_seed'] or 'Explain clearly with practical Python examples.'}\n\n"
-            f"Recent Conversation:\n{history_formatted}\n\n"
-            f"Provide a helpful, direct, clear response to the student's question."
+            f"<system_identity>\n"
+            f"You are the dedicated 1-on-1 AI Technical Tutor & Senior Engineering Mentor for DBERT's Internship Program.\n"
+            f"Your student is {first_name}. You are warm, encouraging, intellectually rigorous, and passionate about guiding {first_name} to master every concept.\n"
+            f"You communicate with clean Markdown: bold essential terms, format code snippets in language-specific code blocks (e.g. ```python, ```javascript, ```sql), and use structured spacing.\n"
+            f"</system_identity>\n\n"
+            f"<curriculum_context>\n"
+            f"- Course: {course_name}\n"
+            f"- Module: Day {day_num} — {chapter_name}\n"
+            f"- Current Topic: {subtopic_title}\n"
+            f"- Topic Summary: {subtopic_brief}\n"
+            f"- Key Takeaways to Master:\n{takeaways_formatted}\n"
+            + (f"- Special Topic Guidelines: {guidelines}\n" if guidelines else "") +
+            f"</curriculum_context>\n\n"
+            f"<pedagogical_mission_and_rules>\n"
+            f"1. MISSION: TOTAL CONCEPT MASTERY VIA MULTI-STEP DIALOGUE\n"
+            f"   Your primary goal is ensuring {first_name} thoroughly understands each and every concept and key takeaway related to '{subtopic_title}'.\n"
+            f"   Do NOT dump an entire textbook at once. Structure your teaching as an engaging multi-step conversational journey:\n"
+            f"   - Step A (Intuition & Why): Explain the core motivation and the real-world engineering or business problem this solves.\n"
+            f"   - Step B (Practical Implementation): Show clean, well-annotated, idiomatic code examples.\n"
+            f"   - Step C (Active Comprehension Check): Conclude every turn with an engaging micro-challenge, thought-provoking 'what if?' question, or prompt for {first_name} to write/modify code.\n\n"
+            f"2. ADAPTIVE RESPONSIVENESS (OBSERVE & ADJUST):\n"
+            f"   - If the student sends brief acknowledgments ('ok', 'yes', 'got it', 'sure', 'start', 'next', 'continue'):\n"
+            f"     NEVER repeat previous explanations. Treat this as validation of understanding, celebrate the progress, and smoothly proceed into the next concept, deeper nuance, or hands-on practice challenge.\n"
+            f"   - If the student asks for code ('code', 'show code', 'example'):\n"
+            f"     Provide a crisp, commented implementation and immediately ask them a targeted question about how it behaves or how they would customize it.\n"
+            f"   - If the student is confused ('what is this?', 'explain in detail', 'help'):\n"
+            f"     Be patient and empathetic. Step back and use a relatable analogy (e.g. real-life parallels) before re-introducing the technical details.\n"
+            f"   - If the student shares code or attempts a solution:\n"
+            f"     Review it like a supportive senior tech lead: highlight what is correct, gently explain bugs or edge cases, and propose a clean improvement.\n"
+            f"   - If the student asks a specific technical question:\n"
+            f"     Directly answer their exact question in the opening sentence, then anchor the explanation back to the topic's key takeaways.\n\n"
+            f"3. TONE & CONSTRAINTS:\n"
+            f"   - NEVER use canned repetitive openings like 'Great question! Regarding...' or 'Let's practice writing code for this step by step.'\n"
+            f"   - Keep each conversational message concise and digestible (typically 2-4 focused paragraphs + code block + 1 active check-in question).\n"
+            f"</pedagogical_mission_and_rules>\n\n"
+            f"{history_section}\n"
+            f"<current_student_input>\n"
+            f"{user_message}\n"
+            f"</current_student_input>\n\n"
+            f"Respond to {first_name} now as their adaptive, expert AI tutor:"
         )
 
-        # Check BYOK key first (UP2.5)
+        # Check BYOK key first (UP2.5) — fetch latest active key
         user_key_row = conn.execute(
-            "SELECT encrypted_key FROM user_api_keys WHERE intern_id = ?",
+            "SELECT encrypted_key, available_models_json FROM user_api_keys WHERE intern_id = ? ORDER BY id DESC LIMIT 1",
             (intern["id"],)
         ).fetchone()
 
-        ai_response = None
-        used_byok = False
+        enrollment_id = enrollment["id"]
+        intern_id = intern["id"]
 
-        if user_key_row and user_key_row["encrypted_key"]:
-            raw_user_key = _decrypt_gemini_key(user_key_row["encrypted_key"])
-            if raw_user_key:
-                ai_response = _gemini_call(prompt, temperature=0.7, max_tokens=1024, api_key=raw_user_key)
-                if ai_response:
-                    used_byok = True
+    # Check key and fallback quota before streaming
+    raw_user_key = None
+    user_models = []
+    if user_key_row and user_key_row["encrypted_key"]:
+        raw_user_key = _decrypt_gemini_key(user_key_row["encrypted_key"])
+        if user_key_row["available_models_json"]:
+            try:
+                user_models = json.loads(user_key_row["available_models_json"])
+            except Exception:
+                user_models = []
 
-        if not used_byok:
-            if not can_use_fallback(intern["id"]):
-                return jsonify({
-                    "status": "quota_exceeded",
-                    "message": "Daily free AI session fallback limit reached. Please connect your free Gemini API key to continue learning.",
-                    "redirect": "/account/gemini-key",
-                    "requires_key": True
-                }), 429
-            
-            ai_response = _gemini_call(prompt, temperature=0.7, max_tokens=1024)
-            increment_daily_fallback_usage(intern["id"])
+    if not raw_user_key:
+        if not can_use_fallback(intern_id):
+            return jsonify({
+                "status": "quota_exceeded",
+                "message": "Daily free AI session fallback limit reached. Please connect your free Gemini API key to continue learning.",
+                "redirect": "/account/gemini-key",
+                "requires_key": True
+            }), 429
 
-        if not ai_response:
-            ai_response = (
-                f"Great question! Regarding '{subtopic['title']}': {subtopic['brief']}. "
-                "Let's practice writing code for this step by step."
-            )
-            
-        conn.execute(
-            "INSERT INTO course_subtopic_chats (enrollment_id, subtopic_id, role, message) "
-            "VALUES (?, ?, 'assistant', ?)",
-            (enrollment["id"], subtopic_id, ai_response)
-        )
-        conn.commit()
+    def generate_stream():
+        collected_chunks = []
+        if raw_user_key:
+            generator = _gemini_stream_byok_call(prompt, api_key=raw_user_key, temperature=0.7, max_tokens=2048, user_models=user_models)
+        else:
+            generator = _gemini_stream_server_call(prompt, temperature=0.7, max_tokens=2048)
+            increment_daily_fallback_usage(intern_id)
 
-    return jsonify({
-        "status": "success",
-        "message": ai_response,
-        "used_byok": used_byok
-    })
+        for chunk, err in generator:
+            if err:
+                yield f"data: {json.dumps({'error': err, 'requires_key': bool(raw_user_key)})}\n\n"
+                return
+            if chunk:
+                collected_chunks.append(chunk)
+                yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+
+        full_reply = "".join(collected_chunks).strip()
+        if full_reply:
+            try:
+                with get_db() as conn:
+                    conn.execute(
+                        "INSERT INTO course_subtopic_chats (enrollment_id, subtopic_id, role, message) "
+                        "VALUES (?, ?, 'assistant', ?)",
+                        (enrollment_id, subtopic_id, full_reply)
+                    )
+                    conn.commit()
+            except Exception as e:
+                log_error("save_chat_stream", e)
+
+        yield f"data: {json.dumps({'done': True})}\n\n"
+
+    response = Response(stream_with_context(generate_stream()), mimetype="text/event-stream")
+    response.headers["Cache-Control"] = "no-cache"
+    response.headers["X-Accel-Buffering"] = "no"
+    return response
 
 
 @app.route("/courses/<int:course_id>/learn", methods=["GET"])
@@ -4634,7 +4987,7 @@ def course_learn_page(course_id):
         conn.commit()
 
         user_key_row = conn.execute(
-            "SELECT validated_at, available_models_json FROM user_api_keys WHERE intern_id = ?",
+            "SELECT validated_at, available_models_json FROM user_api_keys WHERE intern_id = ? ORDER BY id DESC LIMIT 1",
             (intern["id"],)
         ).fetchone()
         has_gemini_key = bool(user_key_row)
@@ -4859,7 +5212,7 @@ def account_gemini_key():
     if request.method == "GET":
         with get_db() as conn:
             key_row = conn.execute(
-                "SELECT validated_at, available_models_json, created_at FROM user_api_keys WHERE intern_id = ?",
+                "SELECT validated_at, available_models_json, created_at FROM user_api_keys WHERE intern_id = ? ORDER BY id DESC LIMIT 1",
                 (intern["id"],)
             ).fetchone()
             
@@ -4901,11 +5254,11 @@ def account_gemini_key():
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     with get_db() as conn:
+        # Delete any previous keys for this intern so only the latest key remains active
+        conn.execute("DELETE FROM user_api_keys WHERE intern_id = ?", (intern["id"],))
         conn.execute(
             "INSERT INTO user_api_keys (intern_id, encrypted_key, key_hash, validated_at, available_models_json) "
-            "VALUES (?, ?, ?, ?, ?) "
-            "ON CONFLICT(key_hash) DO UPDATE SET encrypted_key = excluded.encrypted_key, "
-            "validated_at = excluded.validated_at, available_models_json = excluded.available_models_json",
+            "VALUES (?, ?, ?, ?, ?)",
             (intern["id"], enc_key, key_hash, now_str, models_json)
         )
         conn.commit()
@@ -9873,6 +10226,21 @@ def intern_me():
         if not user:
             return jsonify({"status": "error", "message": "Unauthorized"}), 401
         email = user["email"]
+
+        # Sliding-window session refresh: extend session on each active portal visit
+        try:
+            token = get_session_token_from_request()
+            if token:
+                new_expiry = (datetime.now() + timedelta(days=SESSION_DAYS)).strftime("%Y-%m-%d %H:%M:%S")
+                with get_db() as _sc:
+                    _sc.execute(
+                        "UPDATE user_sessions SET expires_at=? WHERE session_token=?",
+                        (new_expiry, token)
+                    )
+                    _sc.commit()
+        except Exception as _e:
+            log_error("intern-me-refresh-session", _e)
+
         with get_db() as conn:
             acct = conn.execute(
                 "SELECT * FROM intern_accounts WHERE email=? AND is_active=1", (email,)
@@ -10013,6 +10381,10 @@ def intern_me():
             "job_applications": [row_to_dict(r) for r in job_apps],
             "enrollment":   row_to_dict(enr) if enr else None,
             "joining_date": row_to_dict(enr).get("joining_date", "") if enr else "",
+            "internship_end_date": (
+                (datetime.strptime(row_to_dict(enr)["joining_date"], "%Y-%m-%d") + timedelta(days=60)).strftime("%Y-%m-%d")
+                if (enr and row_to_dict(enr).get("joining_date")) else ""
+            ),
             "reapply_info": reapply_info,
             "upi_id":       UPI_ID,
             "upi_amount":   UPI_AMOUNT,
@@ -11477,6 +11849,20 @@ def attendance_ping():
         if not user:
             return jsonify({"status": "error", "message": "Unauthorized"}), 401
 
+        # Sliding session refresh: extend session on every active ping across any page
+        try:
+            token = get_session_token_from_request()
+            if token:
+                new_expiry = (datetime.now() + timedelta(days=SESSION_DAYS)).strftime("%Y-%m-%d %H:%M:%S")
+                with get_db() as _sc:
+                    _sc.execute(
+                        "UPDATE user_sessions SET expires_at=? WHERE session_token=?",
+                        (new_expiry, token)
+                    )
+                    _sc.commit()
+        except Exception as _e:
+            log_error("attendance-ping-refresh-session", _e)
+
         with get_db() as conn:
             acct = conn.execute(
                 "SELECT id FROM intern_accounts WHERE email=? AND is_active=1", (user["email"],)
@@ -11495,28 +11881,52 @@ def attendance_ping():
                 return jsonify({"status": "ok", "skipped": True,
                                 "reason": "before_joining_date"})
 
+            # End-date guard — no attendance credits after joining_date + 60 days
+            if enr and enr["joining_date"]:
+                try:
+                    jd = datetime.strptime(enr["joining_date"], "%Y-%m-%d").date()
+                    if date.today() > jd + timedelta(days=60):
+                        return jsonify({"status": "ok", "skipped": True,
+                                        "reason": "internship_ended"})
+                except ValueError:
+                    pass
+
             week_start, week_end = get_week_bounds()
             ws = week_start.strftime("%Y-%m-%d")
             we = week_end.strftime("%Y-%m-%d")
 
             existing = conn.execute(
-                "SELECT id, total_minutes FROM attendance WHERE intern_id=? AND week_start=?",
+                "SELECT id, total_minutes, updated_at FROM attendance WHERE intern_id=? AND week_start=?",
                 (intern_id, ws)
             ).fetchone()
 
             if existing:
-                new_total = existing["total_minutes"] + 3
-                conn.execute(
-                    "UPDATE attendance SET total_minutes=?, updated_at=? WHERE id=?",
-                    (new_total, now_str(), existing["id"])
-                )
+                # Multi-tab throttle guard: if updated less than 120s ago, skip increment to prevent inflation
+                skip_increment = False
+                if existing["updated_at"]:
+                    try:
+                        last_up = datetime.strptime(existing["updated_at"], "%Y-%m-%d %H:%M:%S")
+                        if (datetime.now() - last_up).total_seconds() < 120:
+                            skip_increment = True
+                    except Exception:
+                        pass
+
+                if skip_increment:
+                    new_total = existing["total_minutes"]
+                else:
+                    new_total = existing["total_minutes"] + 3
+                    conn.execute(
+                        "UPDATE attendance SET total_minutes=?, updated_at=?, email=COALESCE(email, ?) WHERE id=?",
+                        (new_total, now_str(), user["email"], existing["id"])
+                    )
+                    conn.commit()
             else:
                 new_total = 3
                 conn.execute(
-                    "INSERT INTO attendance (intern_id,week_start,week_end,total_minutes,updated_at) VALUES (?,?,?,?,?)",
-                    (intern_id, ws, we, new_total, now_str())
+                    "INSERT INTO attendance (intern_id,email,week_start,week_end,total_minutes,updated_at) VALUES (?,?,?,?,?,?)",
+                    (intern_id, user["email"], ws, we, new_total, now_str())
                 )
-            conn.commit()
+                conn.commit()
 
         hours   = new_total // 60
         minutes = new_total % 60
@@ -11916,16 +12326,16 @@ def admin_stats():
             # Attendance â€” interns below threshold this week
             week_start, _ = get_week_bounds()
             ws = week_start.strftime("%Y-%m-%d")
-            accepted_emails = conn.execute(
-                "SELECT email FROM applications WHERE status=?", (STATUS_ACCEPTED,)
-            ).fetchall()
-            accepted_ids = []
-            for row in accepted_emails:
-                acct = conn.execute(
-                    "SELECT id FROM intern_accounts WHERE email=? AND is_active=1", (row["email"],)
-                ).fetchone()
-                if acct:
-                    accepted_ids.append(acct["id"])
+            active_accepted = conn.execute("""
+                SELECT ia.id
+                FROM intern_accounts ia
+                JOIN applications a ON a.email = ia.email
+                LEFT JOIN enrollments e ON e.email = ia.email
+                WHERE a.status = ? AND ia.is_active = 1
+                  AND (e.joining_date IS NULL OR date(e.joining_date, '+60 days') >= date('now','localtime'))
+                GROUP BY ia.id
+            """, (STATUS_ACCEPTED,)).fetchall()
+            accepted_ids = [r["id"] for r in active_accepted]
 
             below_threshold = 0
             for iid in accepted_ids:
@@ -11974,7 +12384,7 @@ def admin_attendance():
         ws = week_start.strftime("%Y-%m-%d")
 
         with get_db() as conn:
-            # Get all accepted interns
+            # Get all accepted interns currently within their 60-day active window
             accepted = conn.execute("""
                 SELECT ia.id, ia.name, ia.email, ia.domain,
                        e.joining_date, e.batch_label
@@ -11982,6 +12392,7 @@ def admin_attendance():
                 JOIN applications a ON a.email = ia.email
                 LEFT JOIN enrollments e ON e.email = ia.email
                 WHERE a.status = ? AND ia.is_active = 1
+                  AND (e.joining_date IS NULL OR date(e.joining_date, '+60 days') >= date('now','localtime'))
                 GROUP BY ia.id
                 ORDER BY ia.name ASC
             """, (STATUS_ACCEPTED,)).fetchall()
@@ -11989,6 +12400,18 @@ def admin_attendance():
             result = []
             for intern in accepted:
                 iid = intern["id"]
+                jd_str = intern["joining_date"] or ""
+                end_date_str = ""
+                days_rem = 0
+                if jd_str:
+                    try:
+                        jd_dt = datetime.strptime(jd_str, "%Y-%m-%d").date()
+                        end_dt = jd_dt + timedelta(days=60)
+                        end_date_str = end_dt.strftime("%Y-%m-%d")
+                        days_rem = max(0, (end_dt - date.today()).days)
+                    except ValueError:
+                        pass
+
                 # Current week
                 cur_att = conn.execute(
                     "SELECT total_minutes FROM attendance WHERE intern_id=? AND week_start=?",
@@ -12009,7 +12432,9 @@ def admin_attendance():
                     "name":            intern["name"],
                     "email":           intern["email"],
                     "domain":          intern["domain"],
-                    "joining_date":    intern["joining_date"] or "",
+                    "joining_date":    jd_str,
+                    "end_date":        end_date_str,
+                    "days_remaining":  days_rem,
                     "batch_label":     intern["batch_label"] or "",
                     "current_week_minutes": cur_mins,
                     "current_week_hours":   cur_mins // 60,
@@ -12492,7 +12917,7 @@ def admin_intern_edit():
             if email != old_email:
                 conn.execute("UPDATE applications SET email=?, updated_at=? WHERE email=?", (email, now_str(), old_email))
                 conn.execute("UPDATE enrollments SET email=?, updated_at=? WHERE email=?", (email, now_str(), old_email))
-                conn.execute("UPDATE attendance SET email=?, updated_at=? WHERE email=?", (email, now_str(), old_email))
+                conn.execute("UPDATE attendance SET email=?, updated_at=? WHERE email=? OR intern_id=?", (email, now_str(), old_email, intern_id))
                 conn.execute("UPDATE device_profiles SET email=? WHERE email=?", (email, old_email))
                 conn.execute("UPDATE interviews SET email=? WHERE email=?", (email, old_email))
 
