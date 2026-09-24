@@ -1,30 +1,69 @@
+# Environment and Secrets
 .env
 .env*
 _env
 _env*
+senders.json
+*senders.json
+*credentials*
+local_credentials.*
+
+# Databases and Backups
+*.db
 *.db*
+*.sqlite
+*.sqlite3
+*.db-wal
+*.db-shm
 *.backup
-*.sqlite*
 *.zip
+*.tar*
+*.gz
+backups/
+uploads/
+
+# Python & Virtual Environments
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
 venv/
 env/
-.idea/
-.vscode/
-uploads/
-backups/
+.venv/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.cover
+
+# Logs & Runtime
+*.log
+*.pid
 scratch/
 .agent/
 *.csv
 
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.db
-
-# Temporary scripts
+# Temporary, Migration, and Seed Scripts
+migrate_*.py
+seed_*.py
+*seed*.py
+*compensate*.py
 fix_*.py
 patch_*.py
 
@@ -34,10 +73,11 @@ artifacts/
 *.webm
 *.mp4
 
-# Local Credentials, Passwords and Private Seeds
-*credentials*
-local_credentials.*
-seed_admin_mentors.py
-seed_private_*.py
-senders.json
-*senders.json
+# IDEs and OS Metadata
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
