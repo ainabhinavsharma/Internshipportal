@@ -42,7 +42,7 @@
       {% for p in posts %}
       <a class="card" href="{{ post_path(p) }}">
         <div class="c-title">{{ p.title }}</div>
-        <div class="c-meta">{{ p.post_type|capitalize }} · {{ p.domain }}{% if p.location %} · {{ p.location }}{% endif %}{% if p.work_mode %} · {{ p.work_mode }}{% endif %}</div>
+        <div class="c-meta">{{ p.post_type|capitalize }} · {{ p.domain }}{% if p.location %} · {{ p.location }}{% endif %}{% if p.work_mode %} · {{ p.work_mode }}{% endif %} · <span style="color:#C89945; font-weight:600;"><i class="fas fa-users"></i> {{ p.applications_count or 0 }} application{{ 's' if (p.applications_count or 0) != 1 else '' }} received</span></div>
       </a>
       {% endfor %}
     {% else %}

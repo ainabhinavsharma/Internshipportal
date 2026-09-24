@@ -8,6 +8,22 @@
 {% if noindex %}{% set page_robots = "noindex,follow" %}{% endif %}
 {% set page_canonical = canonical %}
 {% include "_head.html" %}
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="{{ page_title_full }}">
+  <meta property="og:description" content="{{ page_desc }}">
+  {% if canonical %}<meta property="og:url" content="{{ canonical }}">{% endif %}
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="{{ page_title_full }}">
+  <meta name="twitter:description" content="{{ page_desc }}">
+  {% if item_list_jsonld %}
+  <script nonce="{{ csp_nonce() }}" type="application/ld+json">{{ item_list_jsonld|safe }}</script>
+  {% endif %}
+  {% if breadcrumb_jsonld %}
+  <script nonce="{{ csp_nonce() }}" type="application/ld+json">{{ breadcrumb_jsonld|safe }}</script>
+  {% endif %}
   <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
   <script nonce="{{ csp_nonce() }}">
     window.OneSignalDeferred = window.OneSignalDeferred || [];
@@ -66,7 +82,7 @@
       })();
     </script>
     <h1>{{ page_h1 or label }}</h1>
-    <p class="sub" style="color:#000 !important;font-size:15px;margin-top:4px;margin-bottom:18px;">Live {{ label|lower }} from verified companies on DBERT{% if location_page %} in {{ active_location }}{% endif %}.</p>
+    <p class="sub" style="color:#000 !important;font-size:15px;margin-top:4px;margin-bottom:18px;">{{ page_sub or ('Live ' ~ label|lower ~ ' from verified companies on DBERT' ~ (' in ' ~ active_location if location_page else '.')) }}</p>
 
     <div class="filters">
       <a role="button" href="{% if active_city_slug %}{{ base_path }}/{{ active_city_slug }}{% else %}{{ base_path }}{% endif %}" class="filter-btn {{ 'on' if not active_domain else '' }}">All Domains</a>
@@ -151,7 +167,12 @@
             {% if p.is_unpaid %}<span class="pill dim">Unpaid</span>
             {% elif p.stipend_min or p.stipend_max %}<span class="pill pay">₹{{ p.stipend_min or p.stipend_max }}{% if p.stipend_min and p.stipend_max %}–{{ p.stipend_max }}{% endif %}{% if p.pay_period %}/{{ p.pay_period }}{% endif %}</span>{% endif %}
           </div>
-          <div class="apply-row">View &amp; apply <i class="fas fa-arrow-right"></i></div>
+          <div class="apply-row" style="display:flex; justify-content:space-between; align-items:center; width:100%; margin-top:8px;">
+            <span style="font-size:12px; color:var(--tx-muted); font-weight:600; display:inline-flex; align-items:center; gap:5px;">
+              <i class="fas fa-users" style="color:#C89945;"></i> {{ p.applications_count or 0 }} application{{ 's' if (p.applications_count or 0) != 1 else '' }} received
+            </span>
+            <span style="display:inline-flex; align-items:center; gap:5px; font-weight:700;">View &amp; apply <i class="fas fa-arrow-right"></i></span>
+          </div>
         </a>
         {% endfor %}
       {% else %}

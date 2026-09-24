@@ -1234,19 +1234,23 @@ PLATFORM_DOMAIN_COURSES = [
 ]
 
 
-def auto_enroll_intern_in_domain_courses(conn, intern_id, domain):
+def auto_enroll_intern_in_domain_courses(conn, intern_id, domain, email=None):
     """Automatically enrolls an intern into the active course(s) for their domain."""
     if not intern_id or not domain or domain not in VALID_DOMAINS:
         return 0
+    if not email and intern_id:
+        acc = conn.execute("SELECT email FROM intern_accounts WHERE id=?", (intern_id,)).fetchone()
+        if acc:
+            email = (acc["email"] or "").strip().lower()
     courses = conn.execute(
         "SELECT id FROM courses WHERE domain=? AND is_active=1", (domain,)
     ).fetchall()
     enrolled_count = 0
     for c in courses:
         res = conn.execute("""
-            INSERT OR IGNORE INTO course_enrollments (intern_id, course_id, enrolled_at, last_accessed_at, current_day)
-            VALUES (?, ?, ?, ?, 1)
-        """, (intern_id, c["id"], now_str(), now_str()))
+            INSERT OR IGNORE INTO course_enrollments (intern_id, course_id, enrolled_at, last_accessed_at, current_day, email)
+            VALUES (?, ?, ?, ?, 1, ?)
+        """, (intern_id, c["id"], now_str(), now_str(), email))
         if res.rowcount > 0:
             enrolled_count += 1
     return enrolled_count
@@ -2322,8 +2326,12 @@ def init_db():
         # UP9.1: Add email_verified to intern_accounts
         ensure_column(conn, "intern_accounts", "email_verified", "INTEGER DEFAULT 0")
 
-        # Attendance tracking email column migration
+        # Attendance tracking and cross-subsystem email column migrations
         ensure_column(conn, "attendance", "email", "TEXT")
+        ensure_column(conn, "course_enrollments", "email", "TEXT")
+        ensure_column(conn, "coin_ledger_mirror", "email", "TEXT")
+        ensure_column(conn, "task_submissions", "email", "TEXT")
+        ensure_column(conn, "intern_certificates", "email", "TEXT")
 
         # UP1.1: Extend courses table schema
         for col, defn in [
@@ -2493,6 +2501,83 @@ def init_db():
                         auto_enroll_intern_in_domain_courses(conn, ai["id"], eff_domain)
                 except Exception as ex_ai:
                     log_error("init_db_ai_enroll", ex_ai)
+
+            # 4. Multi-subsystem identity reconciliation & orphan re-linking (fast in-memory lookup)
+            try:
+                acct_id_to_email = {}
+                email_to_acct_id = {}
+                for r in conn.execute("SELECT id, email FROM intern_accounts").fetchall():
+                    em = (r["email"] or "").strip().lower()
+                    if em:
+                        acct_id_to_email[r["id"]] = em
+                        email_to_acct_id[em] = r["id"]
+
+                app_id_to_email = {r["id"]: (r["email"] or "").strip().lower() for r in conn.execute("SELECT id, email FROM applications").fetchall()}
+                enr_id_to_email = {r["id"]: (r["email"] or "").strip().lower() for r in conn.execute("SELECT id, email FROM enrollments").fetchall()}
+
+                def _resolve_canonical_account(curr_id):
+                    if curr_id in acct_id_to_email:
+                        return curr_id, acct_id_to_email[curr_id]
+                    if curr_id in app_id_to_email:
+                        em = app_id_to_email[curr_id]
+                        if em in email_to_acct_id:
+                            return email_to_acct_id[em], em
+                    if curr_id in enr_id_to_email:
+                        em = enr_id_to_email[curr_id]
+                        if em in email_to_acct_id:
+                            return email_to_acct_id[em], em
+                    return curr_id, None
+
+                # (a) Reconcile intern_certificates
+                for c in conn.execute("SELECT id, intern_id, email FROM intern_certificates").fetchall():
+                    canon_id, canon_email = _resolve_canonical_account(c["intern_id"])
+                    if canon_id != c["intern_id"] or (canon_email and c["email"] != canon_email):
+                        conn.execute("UPDATE intern_certificates SET intern_id=?, email=? WHERE id=?", (canon_id, canon_email, c["id"]))
+
+                # (b) Reconcile coin_ledger_mirror
+                for c in conn.execute("SELECT id, intern_id, email FROM coin_ledger_mirror").fetchall():
+                    canon_id, canon_email = _resolve_canonical_account(c["intern_id"])
+                    if canon_id != c["intern_id"] or (canon_email and c["email"] != canon_email):
+                        conn.execute("UPDATE coin_ledger_mirror SET intern_id=?, email=? WHERE id=?", (canon_id, canon_email, c["id"]))
+
+                # (c) Reconcile task_submissions
+                for t in conn.execute("SELECT id, intern_id, email FROM task_submissions").fetchall():
+                    canon_id, canon_email = _resolve_canonical_account(t["intern_id"])
+                    if canon_id != t["intern_id"] or (canon_email and t["email"] != canon_email):
+                        conn.execute("UPDATE task_submissions SET intern_id=?, email=? WHERE id=?", (canon_id, canon_email, t["id"]))
+
+                # (d) Reconcile course_enrollments (handling potential duplicate enrollments per course)
+                ces = conn.execute("SELECT id, intern_id, course_id, current_day, email FROM course_enrollments").fetchall()
+                seen_ce = {}
+                for ce in ces:
+                    canon_id, canon_email = _resolve_canonical_account(ce["intern_id"])
+                    key = (canon_id, ce["course_id"])
+                    if key in seen_ce:
+                        primary_id = seen_ce[key]
+                        conn.execute("UPDATE day_quiz_attempts SET enrollment_id=? WHERE enrollment_id=?", (primary_id, ce["id"]))
+                        conn.execute("UPDATE course_subtopic_chats SET enrollment_id=? WHERE enrollment_id=?", (primary_id, ce["id"]))
+                        conn.execute("DELETE FROM course_enrollments WHERE id=?", (ce["id"],))
+                    else:
+                        seen_ce[key] = ce["id"]
+                        if canon_id != ce["intern_id"] or (canon_email and ce["email"] != canon_email):
+                            conn.execute("UPDATE course_enrollments SET intern_id=?, email=? WHERE id=?", (canon_id, canon_email, ce["id"]))
+
+                # (e) Reconcile attendance (merging duplicate weeks if any)
+                atts = conn.execute("SELECT id, intern_id, week_start, total_minutes, email FROM attendance").fetchall()
+                seen_att = {}
+                for att in atts:
+                    canon_id, canon_email = _resolve_canonical_account(att["intern_id"])
+                    key = (canon_id, att["week_start"])
+                    if key in seen_att:
+                        primary_id = seen_att[key]
+                        conn.execute("UPDATE attendance SET total_minutes=total_minutes + ? WHERE id=?", (att["total_minutes"] or 0, primary_id))
+                        conn.execute("DELETE FROM attendance WHERE id=?", (att["id"],))
+                    else:
+                        seen_att[key] = att["id"]
+                        if canon_id != att["intern_id"] or (canon_email and att["email"] != canon_email):
+                            conn.execute("UPDATE attendance SET intern_id=?, email=? WHERE id=?", (canon_id, canon_email, att["id"]))
+            except Exception as ex_recon:
+                log_error("init_db_subsystems_recon", ex_recon)
 
             conn.commit()
         except Exception as ex_reconcile:
@@ -3319,20 +3404,25 @@ def require_role(role):
 
 
 def is_admin_request():
-    """Legacy key-based check removed for security (SEC-004). Uses session now."""
-    user = get_current_user()
-    return bool(user and user.get("role") == "admin")
+    """Admin check for protected CSV exports and tools."""
+    return bool(require_admin())
 
 
 def require_admin():
     """Session-based admin check for protected pages/APIs."""
     user = get_current_user()
-    if user and user.get("role") == "admin":
+    if user and user.get("role") in ("admin", "superadmin"):
         return user
     if session.get("admin_id"):
         return {
             "id": session.get("admin_id"),
-            "role": "admin",
+            "role": session.get("role") or "admin",
+            "email": session.get("staff_email", "admin@dbert.online")
+        }
+    if session.get("role") in ("admin", "superadmin"):
+        return {
+            "id": session.get("admin_id", 1),
+            "role": session.get("role"),
             "email": session.get("staff_email", "admin@dbert.online")
         }
     return None
@@ -4205,6 +4295,10 @@ def sitemap_xml():
         (f"{SITE_ORIGIN}/terms",   today, "yearly",  "0.3"),
         (f"{SITE_ORIGIN}/privacy", today, "yearly",  "0.3"),
     ]
+    # Domain landing hubs for internships & jobs (high SEO value category entry points)
+    for _d, _slug in DOMAIN_SLUGS.items():
+        pages.append((f"{SITE_ORIGIN}/internships/{_slug}", today, "daily", "0.85"))
+        pages.append((f"{SITE_ORIGIN}/jobs/{_slug}", today, "daily", "0.85"))
     # Track 2 Â§7: live posts (published & non-expired auto-drop) + public CVs.
     with get_db() as conn:
         for r in conn.execute(
@@ -4607,8 +4701,8 @@ def course_detail(course_id):
         enrollment = None
         if intern:
             enrollment = conn.execute("""
-                SELECT * FROM course_enrollments WHERE intern_id = ? AND course_id = ?
-            """, (intern["id"], course_id)).fetchone()
+                SELECT * FROM course_enrollments WHERE (intern_id = ? OR (email IS NOT NULL AND LOWER(email) = LOWER(?))) AND course_id = ?
+            """, (intern["id"], intern.get("email") or "", course_id)).fetchone()
 
     return render_template(
         "course_detail.html", 
@@ -4653,8 +4747,8 @@ def course_enroll(course_id):
             return jsonify({"status": "error", "message": "Course requires payment"}), 400
             
         existing = conn.execute(
-            "SELECT id FROM course_enrollments WHERE intern_id = ? AND course_id = ?",
-            (intern["id"], course_id)
+            "SELECT id FROM course_enrollments WHERE (intern_id = ? OR (email IS NOT NULL AND LOWER(email) = LOWER(?))) AND course_id = ?",
+            (intern["id"], intern.get("email") or "", course_id)
         ).fetchone()
         
         if not existing:
@@ -4663,23 +4757,23 @@ def course_enroll(course_id):
             min_price_inr = int(get_config("POST_QUOTA_MIN_PRICE_INR", "99"))
 
             enrolled_count = conn.execute(
-                "SELECT COUNT(*) as count FROM course_enrollments WHERE intern_id = ?",
-                (intern["id"],)
+                "SELECT COUNT(*) as count FROM course_enrollments WHERE intern_id = ? OR (email IS NOT NULL AND LOWER(email) = LOWER(?))",
+                (intern["id"], intern.get("email") or "")
             ).fetchone()["count"]
 
             if enrolled_count >= free_quota:
                 return jsonify({
                     "status": "quota_exceeded",
-                    "message": f"Free course enrollment quota ({free_quota} courses) reached. Additional course enrollments require minimum â‚¹{min_price_inr} price or paid track.",
+                    "message": f"Free course enrollment quota ({free_quota} courses) reached. Additional course enrollments require minimum ₹{min_price_inr} price or paid track.",
                     "min_price_inr": min_price_inr,
                     "free_quota": free_quota
                 }), 402
         
         if not existing:
             conn.execute(
-                "INSERT INTO course_enrollments (intern_id, course_id, enrolled_at, last_accessed_at, current_day) "
-                "VALUES (?, ?, datetime('now','localtime'), datetime('now','localtime'), 1)",
-                (intern["id"], course_id)
+                "INSERT INTO course_enrollments (intern_id, course_id, enrolled_at, last_accessed_at, current_day, email) "
+                "VALUES (?, ?, datetime('now','localtime'), datetime('now','localtime'), 1, ?)",
+                (intern["id"], course_id, intern.get("email") or "")
             )
             conn.commit()
 
@@ -4698,8 +4792,8 @@ def course_subtopic_detail(course_id, subtopic_id):
         
     with get_db() as conn:
         enrollment = conn.execute(
-            "SELECT id FROM course_enrollments WHERE intern_id = ? AND course_id = ?",
-            (intern["id"], course_id)
+            "SELECT id FROM course_enrollments WHERE (intern_id = ? OR (email IS NOT NULL AND LOWER(email) = LOWER(?))) AND course_id = ?",
+            (intern["id"], intern.get("email") or "", course_id)
         ).fetchone()
         
         if not enrollment:
@@ -4778,8 +4872,8 @@ def course_subtopic_chat(course_id, subtopic_id):
         
     with get_db() as conn:
         enrollment = conn.execute(
-            "SELECT id FROM course_enrollments WHERE intern_id = ? AND course_id = ?",
-            (intern["id"], course_id)
+            "SELECT id FROM course_enrollments WHERE (intern_id = ? OR (email IS NOT NULL AND LOWER(email) = LOWER(?))) AND course_id = ?",
+            (intern["id"], intern.get("email") or "", course_id)
         ).fetchone()
         
         if not enrollment:
@@ -4973,8 +5067,8 @@ def course_learn_page(course_id):
             abort(404)
             
         enrollment = conn.execute(
-            "SELECT * FROM course_enrollments WHERE intern_id = ? AND course_id = ?",
-            (intern["id"], course_id)
+            "SELECT * FROM course_enrollments WHERE (intern_id = ? OR (email IS NOT NULL AND LOWER(email) = LOWER(?))) AND course_id = ?",
+            (intern["id"], intern.get("email") or "", course_id)
         ).fetchone()
         
         if not enrollment:
@@ -5031,8 +5125,8 @@ def course_quiz_page(course_id, day_number):
         
     with get_db() as conn:
         enrollment = conn.execute(
-            "SELECT * FROM course_enrollments WHERE intern_id = ? AND course_id = ?",
-            (intern["id"], course_id)
+            "SELECT * FROM course_enrollments WHERE (intern_id = ? OR (email IS NOT NULL AND LOWER(email) = LOWER(?))) AND course_id = ?",
+            (intern["id"], intern.get("email") or "", course_id)
         ).fetchone()
         
         if not enrollment:
@@ -5149,8 +5243,8 @@ def course_quiz_submit(course_id, day_number):
     
     with get_db() as conn:
         enrollment = conn.execute(
-            "SELECT * FROM course_enrollments WHERE intern_id = ? AND course_id = ?",
-            (intern["id"], course_id)
+            "SELECT * FROM course_enrollments WHERE (intern_id = ? OR (email IS NOT NULL AND LOWER(email) = LOWER(?))) AND course_id = ?",
+            (intern["id"], intern.get("email") or "", course_id)
         ).fetchone()
         
         if not enrollment:
@@ -5184,11 +5278,21 @@ def course_quiz_submit(course_id, day_number):
             (enrollment["id"], quiz["id"], score, max_score, passed, tab_switches, time_taken_sec)
         )
         
-        if passed and enrollment["current_day"] <= day_number:
-            conn.execute(
-                "UPDATE course_enrollments SET current_day = ? WHERE id = ?",
-                (day_number + 1, enrollment["id"])
-            )
+        if passed:
+            total_days = conn.execute(
+                "SELECT COUNT(*) FROM course_chapters WHERE course_id = ?",
+                (course_id,)
+            ).fetchone()[0] or 0
+            if total_days > 0 and day_number >= total_days:
+                conn.execute(
+                    "UPDATE course_enrollments SET current_day = ?, completed_at = COALESCE(completed_at, datetime('now','localtime')) WHERE id = ?",
+                    (day_number + 1, enrollment["id"])
+                )
+            elif enrollment["current_day"] <= day_number:
+                conn.execute(
+                    "UPDATE course_enrollments SET current_day = ? WHERE id = ?",
+                    (day_number + 1, enrollment["id"])
+                )
         conn.commit()
 
     return jsonify({
@@ -5391,8 +5495,8 @@ def course_submit_project(course_id):
             return jsonify({"status": "error", "message": "This course does not require a capstone project."}), 400
 
         enrollment = conn.execute(
-            "SELECT * FROM course_enrollments WHERE intern_id = ? AND course_id = ?",
-            (intern["id"], course_id)
+            "SELECT * FROM course_enrollments WHERE (intern_id = ? OR (email IS NOT NULL AND LOWER(email) = LOWER(?))) AND course_id = ?",
+            (intern["id"], intern.get("email") or "", course_id)
         ).fetchone()
 
         if not enrollment:
@@ -5558,11 +5662,18 @@ def staff_project_decision(submission_id):
             now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             cert_url = f"/portal/certificate/{cert_uuid}"
 
+            acct_m = conn.execute("SELECT email FROM intern_accounts WHERE id = ?", (sub["intern_id"],)).fetchone()
+            intern_email = (acct_m["email"] or "").strip().lower() if acct_m else None
+
             conn.execute(
-                "INSERT INTO intern_certificates (intern_id, course_id, course_title, cert_id, issued_at, url, tier) "
-                "VALUES (?, ?, ?, ?, ?, ?, 'dbert_verified') "
+                "INSERT INTO intern_certificates (intern_id, course_id, course_title, cert_id, issued_at, url, tier, email) "
+                "VALUES (?, ?, ?, ?, ?, ?, 'dbert_verified', ?) "
                 "ON CONFLICT(intern_id, cert_id) DO NOTHING",
-                (sub["intern_id"], sub["course_id"], sub["course_title"], cert_uuid, now_str, cert_url)
+                (sub["intern_id"], sub["course_id"], sub["course_title"], cert_uuid, now_str, cert_url, intern_email)
+            )
+            conn.execute(
+                "UPDATE course_enrollments SET completed_at = COALESCE(completed_at, ?) WHERE (intern_id = ? OR (email IS NOT NULL AND LOWER(email) = LOWER(?))) AND course_id = ?",
+                (now_str, sub["intern_id"], intern_email or "", sub["course_id"])
             )
             check_and_promote_pending_applications(sub["intern_id"], sub["course_id"])
 
@@ -5606,18 +5717,30 @@ TASK_KINDS     = ("task", "spent")        # spent is negative
 REFERRAL_KINDS = ("referral", "withdrawal")   # withdrawal is negative
 
 
-def get_coin_balances(conn, intern_id):
+def get_coin_balances(conn, intern_id, email=None):
     """Per-ledger balances. Never returns a single mixed total.
 
     Computed from SUM(delta) rather than the newest balance_after: that column
     is a running total across ALL kinds, so reading 'the latest balance_after
     for this ledger_kind' produced wrong numbers per ledger (bug NF2).
     """
-    rows = conn.execute(
-        "SELECT ledger_kind, COALESCE(SUM(delta),0) AS bal "
-        "FROM coin_ledger_mirror WHERE intern_id=? GROUP BY ledger_kind",
-        (intern_id,)
-    ).fetchall()
+    if not email and intern_id:
+        acc = conn.execute("SELECT email FROM intern_accounts WHERE id=?", (intern_id,)).fetchone()
+        if acc:
+            email = (acc["email"] or "").strip().lower()
+
+    if email:
+        rows = conn.execute(
+            "SELECT ledger_kind, COALESCE(SUM(delta),0) AS bal "
+            "FROM coin_ledger_mirror WHERE intern_id=? OR (email IS NOT NULL AND LOWER(email)=LOWER(?)) GROUP BY ledger_kind",
+            (intern_id, email)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT ledger_kind, COALESCE(SUM(delta),0) AS bal "
+            "FROM coin_ledger_mirror WHERE intern_id=? GROUP BY ledger_kind",
+            (intern_id,)
+        ).fetchall()
     m = {r["ledger_kind"]: r["bal"] for r in rows}
     return {
         "task":     m.get("task", 0)     + m.get("spent", 0),
@@ -5625,29 +5748,34 @@ def get_coin_balances(conn, intern_id):
     }
 
 
-def get_task_balance(conn, intern_id):
+def get_task_balance(conn, intern_id, email=None):
     """Spendable balance only. Use this anywhere coins buy something."""
-    return get_coin_balances(conn, intern_id)["task"]
+    return get_coin_balances(conn, intern_id, email=email)["task"]
 
 
-def credit_intern_coins(conn, intern_id, delta, reason, ref_id=None):
+def credit_intern_coins(conn, intern_id, delta, reason, ref_id=None, email=None):
     """Credit TASK coins (approved micro-tasks, quiz passes, streaks)."""
-    new_bal = get_task_balance(conn, intern_id) + delta
+    if not email and intern_id:
+        acc = conn.execute("SELECT email FROM intern_accounts WHERE id=?", (intern_id,)).fetchone()
+        if acc:
+            email = (acc["email"] or "").strip().lower()
+
+    new_bal = get_task_balance(conn, intern_id, email=email) + delta
     idem_key = f"task_reward_{ref_id}_{uuid.uuid4().hex[:6]}" if ref_id else f"coin_credit_{uuid.uuid4().hex[:8]}"
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     conn.execute(
         "INSERT INTO coin_ledger_mirror "
-        "(intern_id, ledger_kind, delta, balance_after, reason, event_ts, idem_key) "
-        "VALUES (?, 'task', ?, ?, ?, ?, ?)",
-        (intern_id, delta, new_bal, reason, now_str, idem_key)
+        "(intern_id, ledger_kind, delta, balance_after, reason, event_ts, idem_key, email) "
+        "VALUES (?, 'task', ?, ?, ?, ?, ?, ?)",
+        (intern_id, delta, new_bal, reason, now_str, idem_key, email)
     )
     return new_bal
 
 
-def credit_referral_coins(conn, intern_id, delta, reason, ref_payment_id):
-    """Credit REFERRAL coins â€” 10% commission on a referred user's verified
-    payment (spec Â§6.3). Withdrawable only; never spendable in-portal.
+def credit_referral_coins(conn, intern_id, delta, reason, ref_payment_id, email=None):
+    """Credit REFERRAL coins — 10% commission on a referred user's verified
+    payment (spec §6.3). Withdrawable only; never spendable in-portal.
 
     Idempotent on ref_payment_id: the UNIQUE idem_key means a payment can only
     ever commission once, however many times the verification hook fires.
@@ -5663,17 +5791,22 @@ def credit_referral_coins(conn, intern_id, delta, reason, ref_payment_id):
     if already:
         return None
 
-    new_bal = get_coin_balances(conn, intern_id)["referral"] + delta
+    if not email and intern_id:
+        acc = conn.execute("SELECT email FROM intern_accounts WHERE id=?", (intern_id,)).fetchone()
+        if acc:
+            email = (acc["email"] or "").strip().lower()
+
+    new_bal = get_coin_balances(conn, intern_id, email=email)["referral"] + delta
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     try:
         conn.execute(
             "INSERT INTO coin_ledger_mirror "
-            "(intern_id, ledger_kind, delta, balance_after, reason, event_ts, idem_key) "
-            "VALUES (?, 'referral', ?, ?, ?, ?, ?)",
-            (intern_id, delta, new_bal, reason, now_str, idem_key)
+            "(intern_id, ledger_kind, delta, balance_after, reason, event_ts, idem_key, email) "
+            "VALUES (?, 'referral', ?, ?, ?, ?, ?, ?)",
+            (intern_id, delta, new_bal, reason, now_str, idem_key, email)
         )
     except sqlite3.IntegrityError:
-        # lost a race on the UNIQUE idem_key â€” the other writer credited it
+        # lost a race on the UNIQUE idem_key — the other writer credited it
         return None
     return new_bal
 
@@ -5957,7 +6090,7 @@ def staff_task_queue():
             "SELECT ts.*, t.title AS task_title, t.coin_reward, t.task_type, t.target_domain, t.payment_type, t.submission_type, a.name AS intern_name, a.email AS intern_email "
             "FROM task_submissions ts "
             "JOIN tasks t ON ts.task_id = t.id "
-            "JOIN intern_accounts a ON ts.intern_id = a.id "
+            "JOIN intern_accounts a ON (ts.intern_id = a.id OR (ts.email IS NOT NULL AND LOWER(ts.email) = LOWER(a.email))) "
             "WHERE ts.status = ? "
             "ORDER BY ts.created_at ASC",
             (status_filter,)
@@ -6038,10 +6171,10 @@ def staff_task_decision(submission_id):
 
     with get_db() as conn:
         sub = conn.execute(
-            "SELECT ts.*, t.title AS task_title, t.coin_reward, t.payment_type, a.name AS intern_name "
+            "SELECT ts.*, t.title AS task_title, t.coin_reward, t.payment_type, a.name AS intern_name, a.email AS intern_email "
             "FROM task_submissions ts "
             "JOIN tasks t ON ts.task_id = t.id "
-            "JOIN intern_accounts a ON ts.intern_id = a.id "
+            "JOIN intern_accounts a ON (ts.intern_id = a.id OR (ts.email IS NOT NULL AND LOWER(ts.email) = LOWER(a.email))) "
             "WHERE ts.id = ?",
             (submission_id,)
         ).fetchone()
@@ -6070,7 +6203,7 @@ def staff_task_decision(submission_id):
         )
 
         if decision == "approved" and coins_awarded > 0:
-            credit_intern_coins(conn, sub["intern_id"], coins_awarded, f"Task Reward: {sub['task_title']}", ref_id=submission_id)
+            credit_intern_coins(conn, sub["intern_id"], coins_awarded, f"Task Reward: {sub['task_title']}", ref_id=submission_id, email=sub["intern_email"])
 
         conn.commit()
 
@@ -6092,8 +6225,9 @@ def tasks_list():
              "FROM tasks t WHERE t.is_active = 1 ")
         params = []
         if intern:
-            q += "AND t.id NOT IN (SELECT task_id FROM task_submissions WHERE intern_id = ?) "
+            q += "AND t.id NOT IN (SELECT task_id FROM task_submissions WHERE intern_id = ? OR (email IS NOT NULL AND LOWER(email) = LOWER(?))) "
             params.append(intern["id"])
+            params.append(intern.get("email") or "")
 
         if intern and intern.get("domain"):
             q += "AND (t.task_type = 'general' OR t.task_type IS NULL OR t.task_type = '' OR (t.task_type = 'domain_specific' AND (t.target_domain = ? OR t.target_domain = '' OR t.target_domain IS NULL))) "
@@ -6107,8 +6241,8 @@ def tasks_list():
         user_submissions = {}
         if intern:
             subs = conn.execute(
-                "SELECT task_id, status FROM task_submissions WHERE intern_id = ? ORDER BY id DESC",
-                (intern["id"],)
+                "SELECT task_id, status FROM task_submissions WHERE intern_id = ? OR (email IS NOT NULL AND LOWER(email) = LOWER(?)) ORDER BY id DESC",
+                (intern["id"], intern.get("email") or "")
             ).fetchall()
             for s in subs:
                 if s["task_id"] not in user_submissions:
@@ -6138,8 +6272,8 @@ def task_detail(task_id):
         my_submission = None
         if intern:
             sub = conn.execute(
-                "SELECT * FROM task_submissions WHERE intern_id = ? AND task_id = ? ORDER BY id DESC LIMIT 1",
-                (intern["id"], task_id)
+                "SELECT * FROM task_submissions WHERE (intern_id = ? OR (email IS NOT NULL AND LOWER(email) = LOWER(?))) AND task_id = ? ORDER BY id DESC LIMIT 1",
+                (intern["id"], intern.get("email") or "", task_id)
             ).fetchone()
             if sub:
                 my_submission = dict(sub)
@@ -6163,8 +6297,8 @@ def task_submit(task_id):
     with get_db() as conn:
         # Enforce single-submission constraint
         existing = conn.execute(
-            "SELECT id, status FROM task_submissions WHERE intern_id = ? AND task_id = ?",
-            (intern["id"], task_id)
+            "SELECT id, status FROM task_submissions WHERE (intern_id = ? OR (email IS NOT NULL AND LOWER(email) = LOWER(?))) AND task_id = ?",
+            (intern["id"], intern.get("email") or "", task_id)
         ).fetchone()
         if existing:
             return jsonify({
@@ -6217,9 +6351,9 @@ def task_submit(task_id):
             version_id = latest_version["id"]
 
         conn.execute(
-            "INSERT INTO task_submissions (intern_id, task_id, task_version_id, submission_content, submission_file, status) "
-            "VALUES (?, ?, ?, ?, ?, 'pending')",
-            (intern["id"], task_id, version_id, content or sub_file, sub_file)
+            "INSERT INTO task_submissions (intern_id, task_id, task_version_id, submission_content, submission_file, status, email) "
+            "VALUES (?, ?, ?, ?, ?, 'pending', ?)",
+            (intern["id"], task_id, version_id, content or sub_file, sub_file, intern.get("email") or "")
         )
         conn.commit()
 
@@ -6263,8 +6397,8 @@ def course_enroll_coins(course_id):
             return jsonify({"status": "error", "message": "Course not found"}), 404
 
         existing = conn.execute(
-            "SELECT id FROM course_enrollments WHERE intern_id = ? AND course_id = ?",
-            (intern["id"], course_id)
+            "SELECT id FROM course_enrollments WHERE (intern_id = ? OR (email IS NOT NULL AND LOWER(email) = LOWER(?))) AND course_id = ?",
+            (intern["id"], intern.get("email") or "", course_id)
         ).fetchone()
 
         if existing:
@@ -6277,21 +6411,21 @@ def course_enroll_coins(course_id):
             return jsonify({"status": "error", "message": "No DBERT coins available to redeem."}), 400
 
         if final_price > 0:
-            return jsonify({"status": "error", "message": f"Coin balance covers â‚¹{discount_inr} discount. Remaining balance of â‚¹{final_price} must be paid via Razorpay/UPI."}), 402
+            return jsonify({"status": "error", "message": f"Coin balance covers ₹{discount_inr} discount. Remaining balance of ₹{final_price} must be paid via Razorpay/UPI."}), 402
 
         conn.execute(
-            "INSERT INTO course_enrollments (intern_id, course_id, current_day) VALUES (?, ?, 1)",
-            (intern["id"], course_id)
+            "INSERT INTO course_enrollments (intern_id, course_id, current_day, email) VALUES (?, ?, 1, ?)",
+            (intern["id"], course_id, intern.get("email") or "")
         )
 
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        # task balance only â€” see calculate_coin_discount
-        cur_bal = get_task_balance(conn, intern["id"])
+        # task balance only — see calculate_coin_discount
+        cur_bal = get_task_balance(conn, intern["id"], email=intern.get("email"))
 
         conn.execute(
-            "INSERT INTO coin_ledger_mirror (intern_id, ledger_kind, delta, balance_after, reason, event_ts, idem_key) "
-            "VALUES (?, 'spent', ?, ?, ?, ?, ?)",
-            (intern["id"], -coins_used, cur_bal - coins_used, f"Redeemed on {course['title']}", now_str, f"enroll_coin_{course_id}_{uuid.uuid4().hex[:6]}")
+            "INSERT INTO coin_ledger_mirror (intern_id, ledger_kind, delta, balance_after, reason, event_ts, idem_key, email) "
+            "VALUES (?, 'spent', ?, ?, ?, ?, ?, ?)",
+            (intern["id"], -coins_used, cur_bal - coins_used, f"Redeemed on {course['title']}", now_str, f"enroll_coin_{course_id}_{uuid.uuid4().hex[:6]}", intern.get("email") or "")
         )
         conn.commit()
 
@@ -6301,7 +6435,7 @@ def course_enroll_coins(course_id):
     })
 
 
-# â”€â”€ UP5.7: Account Coins Ledger Route â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── UP5.7: Account Coins Ledger Route ──────────────────────────────────
 @app.route("/account/coins", methods=["GET"])
 def account_coins_ledger():
     intern = current_intern()
@@ -6309,29 +6443,30 @@ def account_coins_ledger():
         return redirect("/#signin")
 
     with get_db() as conn:
+        email = intern.get("email") or ""
         transactions = conn.execute(
-            "SELECT * FROM coin_ledger_mirror WHERE intern_id = ? ORDER BY id DESC",
-            (intern["id"],)
+            "SELECT * FROM coin_ledger_mirror WHERE intern_id = ? OR (email IS NOT NULL AND LOWER(email) = LOWER(?)) ORDER BY id DESC",
+            (intern["id"], email)
         ).fetchall()
 
-        # Spec Â§4: the two ledgers are reported separately and never summed.
-        balances = get_coin_balances(conn, intern["id"])
+        # Spec §4: the two ledgers are reported separately and never summed.
+        balances = get_coin_balances(conn, intern["id"], email=email)
 
         task_earned = conn.execute(
             "SELECT COALESCE(SUM(delta),0) AS val FROM coin_ledger_mirror "
-            "WHERE intern_id=? AND ledger_kind='task'", (intern["id"],)
+            "WHERE (intern_id=? OR (email IS NOT NULL AND LOWER(email)=LOWER(?))) AND ledger_kind='task'", (intern["id"], email)
         ).fetchone()["val"]
         task_spent = conn.execute(
             "SELECT COALESCE(SUM(ABS(delta)),0) AS val FROM coin_ledger_mirror "
-            "WHERE intern_id=? AND ledger_kind='spent'", (intern["id"],)
+            "WHERE (intern_id=? OR (email IS NOT NULL AND LOWER(email)=LOWER(?))) AND ledger_kind='spent'", (intern["id"], email)
         ).fetchone()["val"]
         referral_earned = conn.execute(
             "SELECT COALESCE(SUM(delta),0) AS val FROM coin_ledger_mirror "
-            "WHERE intern_id=? AND ledger_kind='referral'", (intern["id"],)
+            "WHERE (intern_id=? OR (email IS NOT NULL AND LOWER(email)=LOWER(?))) AND ledger_kind='referral'", (intern["id"], email)
         ).fetchone()["val"]
         referral_withdrawn = conn.execute(
             "SELECT COALESCE(SUM(ABS(delta)),0) AS val FROM coin_ledger_mirror "
-            "WHERE intern_id=? AND ledger_kind='withdrawal'", (intern["id"],)
+            "WHERE (intern_id=? OR (email IS NOT NULL AND LOWER(email)=LOWER(?))) AND ledger_kind='withdrawal'", (intern["id"], email)
         ).fetchone()["val"]
 
     return render_template(
@@ -6955,17 +7090,17 @@ def _tutor_leaderboard(domain_slug):
         with get_db() as conn:
             rows = conn.execute("""
                 SELECT ia.id AS intern_id, ia.name, ia.domain,
-                    (SELECT COUNT(*) FROM intern_certificates WHERE intern_id = ia.id) AS cert_count,
-                    (SELECT COUNT(*) FROM task_submissions WHERE intern_id = ia.id AND status = 'approved') AS task_count,
-                    COALESCE((SELECT SUM(total_minutes) FROM attendance WHERE intern_id = ia.id), 0) AS att_mins,
-                    COALESCE((SELECT MAX(ce.current_day) - 1 FROM course_enrollments ce WHERE ce.intern_id = ia.id), 0) AS lessons_done
+                    (SELECT COUNT(*) FROM intern_certificates WHERE intern_id = ia.id OR (email IS NOT NULL AND LOWER(email) = LOWER(ia.email))) AS cert_count,
+                    (SELECT COUNT(*) FROM task_submissions WHERE (intern_id = ia.id OR (email IS NOT NULL AND LOWER(email) = LOWER(ia.email))) AND status = 'approved') AS task_count,
+                    COALESCE((SELECT SUM(total_minutes) FROM attendance WHERE intern_id = ia.id OR (email IS NOT NULL AND LOWER(email) = LOWER(ia.email))), 0) AS att_mins,
+                    COALESCE((SELECT MAX(ce.current_day) - 1 FROM course_enrollments ce WHERE ce.intern_id = ia.id OR (ce.email IS NOT NULL AND LOWER(ce.email) = LOWER(ia.email))), 0) AS lessons_done
                 FROM intern_accounts ia
                 WHERE ia.is_active = 1
                 ORDER BY (
-                    (SELECT COUNT(*) FROM intern_certificates WHERE intern_id = ia.id) * 40 +
-                    (SELECT COUNT(*) FROM task_submissions WHERE intern_id = ia.id AND status = 'approved') * 20 +
-                    COALESCE((SELECT MAX(ce.current_day) - 1 FROM course_enrollments ce WHERE ce.intern_id = ia.id), 0) * 10 +
-                    COALESCE((SELECT SUM(total_minutes) FROM attendance WHERE intern_id = ia.id), 0) / 60.0 * 5
+                    (SELECT COUNT(*) FROM intern_certificates WHERE intern_id = ia.id OR (email IS NOT NULL AND LOWER(email) = LOWER(ia.email))) * 40 +
+                    (SELECT COUNT(*) FROM task_submissions WHERE (intern_id = ia.id OR (email IS NOT NULL AND LOWER(email) = LOWER(ia.email))) AND status = 'approved') * 20 +
+                    COALESCE((SELECT MAX(ce.current_day) - 1 FROM course_enrollments ce WHERE ce.intern_id = ia.id OR (ce.email IS NOT NULL AND LOWER(ce.email) = LOWER(ia.email))), 0) * 10 +
+                    COALESCE((SELECT SUM(total_minutes) FROM attendance WHERE intern_id = ia.id OR (email IS NOT NULL AND LOWER(email) = LOWER(ia.email))), 0) / 60.0 * 5
                 ) DESC
                 LIMIT 50
             """).fetchall()
@@ -7034,12 +7169,13 @@ def intern_coins_json():
         if not intern:
             return jsonify({"status": "error", "message": "Unauthorized"}), 401
         with get_db() as conn:
+            email = (intern.get("email") or "").strip().lower()
             rows = conn.execute(
                 "SELECT event_ts, ledger_kind, delta, balance_after, reason "
-                "FROM coin_ledger_mirror WHERE intern_id = ? ORDER BY id DESC",
-                (intern["id"],)
+                "FROM coin_ledger_mirror WHERE intern_id = ? OR (email IS NOT NULL AND LOWER(email) = LOWER(?)) ORDER BY id DESC",
+                (intern["id"], email)
             ).fetchall()
-            balances = get_coin_balances(conn, intern["id"])
+            balances = get_coin_balances(conn, intern["id"], email=email)
         return jsonify({
             "status": "success",
             "balances": balances,
@@ -7058,12 +7194,13 @@ def intern_certificates_json():
         if not intern:
             return jsonify({"status": "error", "message": "Unauthorized"}), 401
         with get_db() as conn:
+            email = (intern.get("email") or "").strip().lower()
             rows = conn.execute("""
                 SELECT course_id, course_title, cert_id, issued_at, url, tier
                 FROM intern_certificates
-                WHERE intern_id = ?
+                WHERE intern_id = ? OR (email IS NOT NULL AND LOWER(email) = LOWER(?))
                 ORDER BY issued_at DESC, id DESC
-            """, (intern["id"],)).fetchall()
+            """, (intern["id"], email)).fetchall()
             certs = []
             for r in rows:
                 d = dict(r)
@@ -7082,7 +7219,7 @@ def portal_view_certificate(cert_id):
         cert_row = conn.execute("""
             SELECT c.*, a.name, a.domain
             FROM intern_certificates c
-            JOIN intern_accounts a ON a.id = c.intern_id
+            JOIN intern_accounts a ON (a.id = c.intern_id OR (c.email IS NOT NULL AND LOWER(a.email) = LOWER(c.email)))
             WHERE c.cert_id = ?
         """, (cert_id,)).fetchone()
     if not cert_row:
@@ -7092,7 +7229,7 @@ def portal_view_certificate(cert_id):
 
 @app.route("/admin/ledger")
 def admin_ledger():
-    """All mirrored coin events + certificates (Track 1 Â§6). Read-only, filterable
+    """All mirrored coin events + certificates (Track 1 §6). Read-only, filterable
     by ledger_kind / intern_id."""
     try:
         if not require_admin():
@@ -7102,7 +7239,7 @@ def admin_ledger():
         sql = (
             "SELECT m.ledger_kind, m.delta, m.balance_after, m.reason, m.event_ts, "
             "m.intern_id, a.name AS intern_name, a.email AS intern_email "
-            "FROM coin_ledger_mirror m LEFT JOIN intern_accounts a ON a.id = m.intern_id"
+            "FROM coin_ledger_mirror m LEFT JOIN intern_accounts a ON (a.id = m.intern_id OR (m.email IS NOT NULL AND LOWER(a.email) = LOWER(m.email)))"
         )
         conds, params = [], []
         if kind in ("ad", "task"):
@@ -7117,8 +7254,8 @@ def admin_ledger():
             certs = [row_to_dict(r) for r in conn.execute(
                 "SELECT c.course_title, c.cert_id, c.issued_at, c.intern_id, "
                 "a.name AS intern_name FROM intern_certificates c "
-                "LEFT JOIN intern_accounts a ON a.id = c.intern_id "
-                "ORDER BY c.received_at DESC, c.id DESC LIMIT 200"
+                "LEFT JOIN intern_accounts a ON (a.id = c.intern_id OR (c.email IS NOT NULL AND LOWER(a.email) = LOWER(c.email))) "
+                "ORDER BY c.issued_at DESC, c.id DESC LIMIT 200"
             ).fetchall()]
         return render_template(
             "admin_ledger.html", rows=rows, certs=certs, kind=kind,
@@ -8649,7 +8786,7 @@ def company_profile(slug):
             abort(404)
         company = row_to_dict(company)
         posts = [row_to_dict(r) for r in conn.execute(
-            "SELECT * FROM posts WHERE company_id=? AND " + _LIVE_SQL +  # nosec B608
+            "SELECT posts.*, (SELECT COUNT(*) FROM post_applications pa WHERE pa.post_id = posts.id) AS applications_count FROM posts WHERE company_id=? AND " + _LIVE_SQL +  # nosec B608
             " ORDER BY published_at DESC", (company_id,)).fetchall()]
         cohorts = [row_to_dict(r) for r in conn.execute(
             "SELECT * FROM cohorts WHERE company_id=? AND status='published' "
@@ -8860,6 +8997,66 @@ def _post_completeness_errors(post):
     return errors
 
 
+def _parse_responsibilities_list(text):
+    """Robustly parse bulleted responsibilities from any raw text format."""
+    if not text:
+        return []
+    text = str(text).replace("\x95", "•").replace("\r\n", "\n").replace("\r", "\n")
+    raw_chunks = text.split("•") if "•" in text else text.split("\n")
+    items = []
+    for chunk in raw_chunks:
+        for line in chunk.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith("*") or line.lower().startswith("note:"):
+                continue
+            cleaned = re.sub(r"^[•\-\*\s]+", "", line).strip()
+            if cleaned and cleaned not in items:
+                items.append(cleaned)
+    return items
+
+
+def _build_job_posting_html_desc(post, company):
+    """Build rich HTML description for Google for Jobs schema."""
+    parts = []
+    desc = (post.get("description") or "").strip()
+    if desc:
+        parts.append(f"<p>{desc}</p>")
+    resp = (post.get("responsibilities") or "").strip()
+    if resp:
+        resp_items = _parse_responsibilities_list(resp)
+        if resp_items:
+            resp_lines = "".join(f"<li>{item}</li>" for item in resp_items)
+            parts.append(f"<h3>Responsibilities</h3><ul>{resp_lines}</ul>")
+    skills = (post.get("skills") or "").strip()
+    if skills:
+        parts.append(f"<h3>Key Skills &amp; Technologies</h3><p>{skills}</p>")
+    elig = (post.get("eligibility") or "").strip()
+    if elig:
+        parts.append(f"<h3>Eligibility &amp; Commitment</h3><p>{elig}</p>")
+    if post.get("post_type") == "internship":
+        stipend_range = "₹5,000 base + up to ₹13,000 performance-based incentives (Total up to ₹18,000/month)"
+        if post.get("stipend_min") and post.get("stipend_max"):
+            stipend_range = f"₹{post['stipend_min']} to ₹{post['stipend_max']} per month (including incentives)"
+        parts.append(
+            "<h3>Benefits &amp; Rewards</h3>"
+            "<ul>"
+            "<li>Flexible remote schedule (minimum 10 hours/week, &gt;=75% portal attendance)</li>"
+            f"<li>Stipend: {stipend_range}</li>"
+            "<li>Official Certificate of Completion &amp; Letter of Recommendation (LOR)</li>"
+            "<li>Verified GitHub contribution credit on real production repositories</li>"
+            "<li>Portfolio profile building and technical mentorship</li>"
+            "</ul>"
+        )
+        parts.append(
+            "<p><strong>* Stipend Qualification Criteria:</strong> "
+            "Stipend is paid upon completing at least 3 approved pull requests on the actual project repository "
+            "along with maintaining required attendance (&gt;=75%) and weekly milestone task completion.</p>"
+        )
+    return "".join(parts) if parts else (desc or post.get("title") or "Internship Opening")
+
+
 def _job_posting_jsonld(post, company):
     """schema.org/JobPosting with Google-required + recommended fields."""
     posted = (post.get("published_at") or "").replace(" ", "T")
@@ -8868,17 +9065,33 @@ def _job_posting_jsonld(post, company):
         "@context": "https://schema.org/",
         "@type": "JobPosting",
         "title": post["title"],
-        "description": post.get("description") or post.get("responsibilities") or post["title"],
+        "description": _build_job_posting_html_desc(post, company),
         "datePosted": posted,
         "employmentType": "INTERN" if post["post_type"] == "internship" else "FULL_TIME",
-        "hiringOrganization": {"@type": "Organization", "name": company["name"]},
+        "hiringOrganization": {
+            "@type": "Organization",
+            "name": company["name"],
+            "sameAs": company.get("website") or SITE_ORIGIN,
+        },
         "identifier": {"@type": "PropertyValue", "name": company["name"], "value": str(post["id"])},
         "directApply": True,
+        "experienceRequirements": {
+            "@type": "OccupationalExperienceRequirements",
+            "monthsOfExperience": 0
+        },
+        "educationRequirements": {
+            "@type": "EducationalOccupationalCredential",
+            "credentialCategory": "bachelor degree"
+        },
+        "workHours": "10 hours per week (Flexible)",
+        "jobBenefits": "Stipend ₹5,000 base + ₹13,000 performance incentives (Total up to ₹18,000/mo), Certificate of Completion, Letter of Recommendation (LOR), Verified GitHub repository credit",
     }
+    if post.get("skills"):
+        ld["skills"] = [s.strip() for s in post["skills"].split(",") if s.strip()]
+    if post.get("eligibility"):
+        ld["qualifications"] = post["eligibility"]
     if through:
         ld["validThrough"] = through
-    if company.get("website"):
-        ld["hiringOrganization"]["sameAs"] = company["website"]
     if (post.get("work_mode") or "").lower() == "remote":
         ld["jobLocationType"] = "TELECOMMUTE"
         ld["applicantLocationRequirements"] = {"@type": "Country", "name": "India"}
@@ -8969,13 +9182,85 @@ def _city_slugify(city):
     return re.sub(r"\s+", "-", s.strip())
 
 
-def _render_listings(post_type, location_page=False, city=None, city_slug=None):
-    """Shared renderer for the plain catalogue (/jobs, /internships) and the T8
-    per-city landing pages (/jobs/<city>, /internships/<city>). ``location_page``
-    switches in dynamic long-tail SEO (title/meta/H1/robots) and city-path
-    interlinks; the query-string ``?location=`` filter on the plain catalogue still
-    works as a non-canonical convenience (T3) but is no longer linked from the UI."""
-    domain = clean_text(request.args.get("domain"))
+DOMAIN_SEO = {
+    "AI Agent Development": {
+        "internship": {
+            "title": "Remote AI Agent Development Internships 2026 (LangChain, LLMs, RAG) | DBERT",
+            "h1": "Remote AI Agent Development & Generative AI Internships",
+            "desc": "Apply for remote AI Agent Development internships in India. Build LLM tool-calling agents, MCP clients, and RAG pipelines with ₹5,000–₹18,000/mo stipend, Certificate & LOR on DBERT.",
+            "sub": "Contribute to cutting-edge production agents, local Ollama/LM Studio pipelines, and LangChain orchestration with mentor guidance and verified GitHub credit.",
+        },
+        "job": {
+            "title": "Remote AI Agent Development Jobs 2026 — Generative AI & LLMs | DBERT",
+            "h1": "Remote AI Agent Development & LLM Engineering Jobs",
+            "desc": "Explore verified remote AI engineering jobs. Build production AI agents, autonomous workflows, and LLM tooling with high-growth startups on DBERT.",
+            "sub": "Production roles in autonomous agent architecture, vector databases, and enterprise AI tooling.",
+        }
+    },
+    "Data Analyst": {
+        "internship": {
+            "title": "Remote Data Analyst Internships 2026 (Power BI, SQL, Analytics) | DBERT",
+            "h1": "Remote Data Analyst & Power BI Internships with Stipend",
+            "desc": "Browse verified remote Data Analyst internships. Master Power BI, SQL, predictive dropout scoring, and business dashboards with ₹5,000–₹18,000/mo stipend & LOR on DBERT.",
+            "sub": "Analyze student learning telemetry, build interactive executive dashboards, and derive predictive conversion metrics for live platforms.",
+        },
+        "job": {
+            "title": "Remote Data Analyst Jobs 2026 — Power BI, SQL & Business Intelligence | DBERT",
+            "h1": "Remote Data Analyst & BI Engineering Jobs",
+            "desc": "Explore high-impact remote Data Analyst and BI roles. Transform raw data into strategic insights using SQL, Python, and Power BI on DBERT.",
+            "sub": "Full-time and contract analytics roles across high-growth AI and EdTech ecosystems.",
+        }
+    },
+    "Python Automation": {
+        "internship": {
+            "title": "Remote Python Automation Internships 2026 (ETL, Scraping, Bots) | DBERT",
+            "h1": "Remote Python Automation & Bot Engineering Internships",
+            "desc": "Apply for remote Python Automation internships in India. Build web scrapers, automated ETL data pipelines, and workflow bots with stipend up to ₹18,000/mo and verified GitHub credit.",
+            "sub": "Automate high-volume workflows, integrate third-party APIs, and engineer resilient web scrapers with mentor support.",
+        },
+        "job": {
+            "title": "Remote Python Automation Jobs 2026 — Scripting & ETL Engineering | DBERT",
+            "h1": "Remote Python Automation & Backend Engineering Jobs",
+            "desc": "Find verified remote Python Automation engineer jobs. Scale automated ETL pipelines, cloud workers, and workflow bots on DBERT.",
+            "sub": "Engineering roles focused on automation, data engineering, and backend Python infrastructure.",
+        }
+    },
+    "Full Stack Development": {
+        "internship": {
+            "title": "Remote Full Stack Developer Internships 2026 (React, Python, APIs) | DBERT",
+            "h1": "Remote Full Stack Web Development Internships",
+            "desc": "Explore remote Full Stack developer internships in India. Build production REST APIs, FastAPI & React interfaces with ₹5,000–₹18,000/mo stipend, Certificate of Completion & LOR.",
+            "sub": "Architect end-to-end web features with modern tech stacks (React, Tailwind CSS, FastAPI, SQLite/PostgreSQL) and ship production pull requests.",
+        },
+        "job": {
+            "title": "Remote Full Stack Developer Jobs 2026 — React, Node & Python | DBERT",
+            "h1": "Remote Full Stack Software Engineer Jobs",
+            "desc": "Discover verified remote Full Stack engineering jobs. Build responsive web applications and scalable backend services with leading startups on DBERT.",
+            "sub": "Full-time roles building web frontends, high-performance APIs, and cloud microservices.",
+        }
+    },
+}
+
+DEFAULT_LISTING_SEO = {
+    "internship": {
+        "title": "Remote Tech Internships 2026 with Stipend & Certificate | DBERT",
+        "h1": "Remote Tech Internships with Stipend (AI, Data, Full Stack & Python)",
+        "desc": "Browse 60+ verified remote tech internships in India with ₹5,000–₹18,000/month stipend. Work on AI Agents, Data Analytics, Python Automation & Full Stack with Certificate & LOR.",
+        "sub": "100% remote internships across AI Agent Development, Data Analyst, Python Automation, and Full Stack Development. Gain verified GitHub repository credit and mentor recommendations.",
+    },
+    "job": {
+        "title": "Remote Tech Jobs 2026 — AI, Data & Software Engineering | DBERT",
+        "h1": "Remote Tech Jobs & Engineering Openings",
+        "desc": "Explore verified remote tech jobs across AI Agent Development, Data Analytics, and Full Stack Engineering. Apply directly to high-growth tech companies on DBERT.",
+        "sub": "Explore full-time and contract tech roles across AI, analytics, and software development from verified organizations.",
+    },
+}
+
+
+def _render_listings(post_type, location_page=False, city=None, city_slug=None, domain_override=None, domain_slug=None):
+    """Shared renderer for the catalogue (/jobs, /internships), domain hubs (/internships/<domain>),
+    and per-city landing pages (/jobs/<city>, /internships/<city>)."""
+    domain = domain_override or clean_text(request.args.get("domain"))
     if domain and domain not in VALID_DOMAINS:
         domain = ""
     location = city or clean_text(request.args.get("location"))
@@ -8993,7 +9278,9 @@ def _render_listings(post_type, location_page=False, city=None, city_slug=None):
         params.append(location)
     with get_db() as conn:
         rows = conn.execute(
-            f"SELECT p.*, c.name AS company_name FROM posts p JOIN companies c ON c.id=p.company_id "  # nosec B608
+            f"SELECT p.*, c.name AS company_name, "
+            f"(SELECT COUNT(*) FROM post_applications pa WHERE pa.post_id = p.id) AS applications_count "
+            f"FROM posts p JOIN companies c ON c.id=p.company_id "
             f"WHERE {where} ORDER BY p.published_at DESC LIMIT ? OFFSET ?",
             (*params, _POSTS_PER_PAGE + 1, (page - 1) * _POSTS_PER_PAGE),
         ).fetchall()
@@ -9008,7 +9295,7 @@ def _render_listings(post_type, location_page=False, city=None, city_slug=None):
             loc_where += " AND location != ?"
             loc_params.append(location)
         locations = [row_to_dict(r) for r in conn.execute(
-            f"SELECT location, COUNT(*) AS n FROM posts WHERE {loc_where} GROUP BY location ORDER BY location",  # nosec B608
+            f"SELECT location, COUNT(*) AS n FROM posts WHERE {loc_where} GROUP BY location ORDER BY location",
             loc_params,
         ).fetchall()]
         for loc in locations:
@@ -9016,7 +9303,7 @@ def _render_listings(post_type, location_page=False, city=None, city_slug=None):
         live_count_here = None
         if location_page:
             live_count_here = conn.execute(
-                f"SELECT COUNT(*) FROM posts p WHERE p.post_type=? AND p.location=? AND {_LIVE_SQL}",  # nosec B608
+                f"SELECT COUNT(*) FROM posts p WHERE p.post_type=? AND p.location=? AND {_LIVE_SQL}",
                 (post_type, location),
             ).fetchone()[0]
     posts = [row_to_dict(r) for r in rows[:_POSTS_PER_PAGE]]
@@ -9025,26 +9312,78 @@ def _render_listings(post_type, location_page=False, city=None, city_slug=None):
     label = "Internships" if post_type == "internship" else "Jobs"
     listing_base = f"{base_path}/{city_slug}" if location_page else base_path
 
-    page_title = page_h1 = page_meta_description = None
+    active_domain_slug = domain_slug or (DOMAIN_SLUGS.get(domain, "") if domain else "")
     noindex = False
-    if location_page:
+    
+    if domain and domain in DOMAIN_SEO:
+        seo_data = DOMAIN_SEO[domain].get(post_type, {})
+        page_title = seo_data.get("title")
+        page_h1 = seo_data.get("h1")
+        page_meta_description = seo_data.get("desc")
+        page_sub = seo_data.get("sub")
+        canonical = f"{SITE_ORIGIN}{base_path}/{active_domain_slug}" if active_domain_slug else f"{SITE_ORIGIN}{base_path}"
+    elif location_page and location:
         domain_prefix = f"{domain} " if domain else ""
-        page_h1 = f"{domain_prefix}{label} in {location} â€” Remote & On-site"
+        page_h1 = f"{domain_prefix}{label} in {location} — Remote & On-site"
         page_title = f"{page_h1} | DBERT"
         page_meta_description = (
             f"Browse live {domain_prefix}{label.lower()} based in {location}. "
             f"Apply directly to verified companies on DBERT."
         )
+        page_sub = f"Live {label.lower()} based in {location} on DBERT."
         noindex = (live_count_here or 0) < 3
+        canonical = f"{SITE_ORIGIN}{base_path}/{city_slug}"
+    else:
+        def_seo = DEFAULT_LISTING_SEO.get(post_type, {})
+        page_title = def_seo.get("title")
+        page_h1 = def_seo.get("h1")
+        page_meta_description = def_seo.get("desc")
+        page_sub = def_seo.get("sub")
+        canonical = f"{SITE_ORIGIN}{base_path}"
+
+    item_list_elements = []
+    for idx, p in enumerate(posts[:30]):
+        item_list_elements.append({
+            "@type": "ListItem",
+            "position": idx + 1,
+            "url": _canonical_post_url(p),
+            "name": p["title"]
+        })
+    item_list_jsonld = json.dumps({
+        "@context": "https://schema.org",
+        "@type": "ItemList",
+        "name": page_h1,
+        "description": page_meta_description,
+        "itemListElement": item_list_elements
+    }).replace("</", "<\\/")
+
+    breadcrumb_elements = [
+        {"@type": "ListItem", "position": 1, "name": "Home", "item": f"{SITE_ORIGIN}/"},
+        {"@type": "ListItem", "position": 2, "name": label, "item": f"{SITE_ORIGIN}{base_path}"}
+    ]
+    if domain:
+        breadcrumb_elements.append({
+            "@type": "ListItem",
+            "position": 3,
+            "name": domain,
+            "item": f"{SITE_ORIGIN}{base_path}/{active_domain_slug}" if active_domain_slug else f"{SITE_ORIGIN}{base_path}"
+        })
+    breadcrumb_jsonld = json.dumps({
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": breadcrumb_elements
+    }).replace("</", "<\\/")
 
     return render_template(
         "post_listings.html", posts=posts, post_type=post_type, label=label,
         base_path=base_path, listing_base=listing_base, domains=VALID_DOMAINS,
-        domain_slugs=DOMAIN_SLUGS,
+        domain_slugs=DOMAIN_SLUGS, active_domain_slug=active_domain_slug,
         active_domain=domain, active_location=location, locations=locations,
         page=page, has_next=has_next, site_origin=SITE_ORIGIN, post_path=_post_path,
         location_page=location_page, city_slug=city_slug,
-        page_title=page_title, page_h1=page_h1, page_meta_description=page_meta_description,
+        page_title=page_title, page_h1=page_h1, page_sub=page_sub,
+        page_meta_description=page_meta_description, canonical=canonical,
+        item_list_jsonld=item_list_jsonld, breadcrumb_jsonld=breadcrumb_jsonld,
         noindex=noindex)
 
 
@@ -9074,7 +9413,7 @@ def _resolve_city_slug(city_slug):
 def jobs_by_city(slug):
     slug_domains = {s: d for d, s in DOMAIN_SLUGS.items()}
     if slug in slug_domains:
-        return redirect(f"/jobs?domain={quote(slug_domains[slug])}")
+        return _render_listings("job", domain_override=slug_domains[slug], domain_slug=slug)
     city = _resolve_city_slug(slug)
     if not city:
         abort(404)
@@ -9085,7 +9424,7 @@ def jobs_by_city(slug):
 def internships_by_city(slug):
     slug_domains = {s: d for d, s in DOMAIN_SLUGS.items()}
     if slug in slug_domains:
-        return redirect(f"/internships?domain={quote(slug_domains[slug])}")
+        return _render_listings("internship", domain_override=slug_domains[slug], domain_slug=slug)
     city = _resolve_city_slug(slug)
     if not city:
         abort(404)
@@ -9105,8 +9444,8 @@ def _render_post_detail(post_type, slug, post_id):
     if post["status"] == "draft":
         abort(404)  # drafts were never public
     if not _is_live_post(post):
-        abort(410)  # expired/unpublished â†’ tell Google to drop it (pitfall Â§9)
-    if (post.get("slug") or "post") != slug:  # cosmetic slug drifted â†’ 301 to canonical
+        abort(410)  # expired/unpublished → tell Google to drop it (pitfall §9)
+    if (post.get("slug") or "post") != slug:  # cosmetic slug drifted → 301 to canonical
         return redirect(_post_path(post), code=301)
     intern = current_intern()
     already_applied = False
@@ -9119,28 +9458,30 @@ def _render_post_detail(post_type, slug, post_id):
             "FROM post_comments pc JOIN intern_accounts a ON a.id=pc.intern_id "
             "WHERE pc.post_id=? ORDER BY pc.id DESC", (post_id,)).fetchall()]
         # UAT #13: render the already-applied state server-side so a revisit shows
-        # "Applied âœ“ â€” View in My Applications", not a fresh "Apply Now".
+        # "Applied ✓ — View in My Applications", not a fresh "Apply Now".
         if intern:
             already_applied = conn.execute(
                 "SELECT 1 FROM post_applications WHERE post_id=? AND intern_id=?",
                 (post_id, intern["id"]),
             ).fetchone() is not None
-        # T3: real "N applied" alongside views â€” the apply-funnel's only social proof,
+        # T3: real "N applied" alongside views — the apply-funnel's only social proof,
         # pulled straight from post_applications (never fabricated).
         applied_count = conn.execute(
             "SELECT COUNT(*) FROM post_applications WHERE post_id=?", (post_id,)
         ).fetchone()[0]
-        # T3 interlinking: more in the same domain, more in the same city â€” both
+        # T3 interlinking: more in the same domain, more in the same city — both
         # exclude self and only ever surface other LIVE posts.
         related_posts = [row_to_dict(r) for r in conn.execute(
-            f"SELECT id, title, post_type, slug, domain, location, work_mode FROM posts "  # nosec B608
+            f"SELECT id, title, post_type, slug, domain, location, work_mode, "
+            f"(SELECT COUNT(*) FROM post_applications pa WHERE pa.post_id = posts.id) AS applications_count FROM posts "
             f"WHERE domain=? AND id!=? AND {_LIVE_SQL} ORDER BY published_at DESC LIMIT 4",
             (post["domain"], post_id),
         ).fetchall()]
         city_posts = []
         if post.get("location"):
             city_posts = [row_to_dict(r) for r in conn.execute(
-                f"SELECT id, title, post_type, slug, domain, location, work_mode FROM posts "  # nosec B608
+                f"SELECT id, title, post_type, slug, domain, location, work_mode, "
+                f"(SELECT COUNT(*) FROM post_applications pa WHERE pa.post_id = posts.id) AS applications_count FROM posts "
                 f"WHERE location=? AND id!=? AND {_LIVE_SQL} ORDER BY published_at DESC LIMIT 4",
                 (post["location"], post_id),
             ).fetchall()]
@@ -9153,18 +9494,59 @@ def _render_post_detail(post_type, slug, post_id):
     jsonld = json.dumps(_job_posting_jsonld(post, company)).replace("</", "<\\/")
     base_path = "/internships" if post_type == "internship" else "/jobs"
     label = "Internships" if post_type == "internship" else "Jobs"
+    domain_slug = DOMAIN_SLUGS.get(post["domain"], "")
+    domain_url = f"{base_path}/{domain_slug}" if domain_slug else f"{base_path}?domain={quote(post['domain'])}"
     breadcrumbs = [
         ("Home", "/"), (label, base_path),
-        (post["domain"], f"{base_path}?domain={quote(post['domain'])}"),
+        (post["domain"], domain_url),
     ]
+
+    # BreadcrumbList Schema.org JSON-LD
+    breadcrumb_elements = [
+        {"@type": "ListItem", "position": 1, "name": "Home", "item": f"{SITE_ORIGIN}/"},
+        {"@type": "ListItem", "position": 2, "name": label, "item": f"{SITE_ORIGIN}{base_path}"},
+        {"@type": "ListItem", "position": 3, "name": post["domain"], "item": f"{SITE_ORIGIN}{domain_url}"},
+        {"@type": "ListItem", "position": 4, "name": post["title"], "item": _canonical_post_url(post)}
+    ]
+    breadcrumb_jsonld = json.dumps({
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": breadcrumb_elements
+    }).replace("</", "<\\/")
+
+    # High-CTR Title Tag
+    stipend_str = ""
+    if post.get("stipend_min") and post.get("stipend_max"):
+        stipend_str = f" (₹{post['stipend_min']}–₹{post['stipend_max']}/mo)"
+    elif post.get("stipend_min") or post.get("stipend_max"):
+        stipend_str = f" (₹{post.get('stipend_min') or post.get('stipend_max')}/mo)"
+
+    type_str = "Remote Internship" if post_type == "internship" else "Remote Job"
+    page_title = f"{post['title']}{stipend_str} — {type_str} | DBERT"
+
+    # High-Converting Meta Description (150-160 chars)
+    if post_type == "internship":
+        stipend_mention = f"with {stipend_str.strip(' ()')}" if stipend_str else "with monthly stipend"
+        meta_desc = f"Apply for {post['title']} at {company['name']}. Remote {post['domain']} internship {stipend_mention}, Certificate of Completion & LOR on DBERT. Apply now!"
+    else:
+        meta_desc = f"Explore {post['title']} at {company['name']}. Verified remote {post['domain']} role with competitive compensation on DBERT. Apply today."
+    
+    if len(meta_desc) > 160:
+        meta_desc = _meta_desc(meta_desc, limit=160)
+
+    responsibilities_list = _parse_responsibilities_list(post.get("responsibilities"))
+    skills_list = [s.strip() for s in (post.get("skills") or "").split(",") if s.strip()]
+
     return render_template(
         "post_detail.html", post=post, company=company, comments=comments, certs=certs,
         jsonld=jsonld, canonical=_canonical_post_url(post),
-        meta_desc=_meta_desc(post.get("description")), is_intern=bool(intern),
+        meta_desc=meta_desc, page_title=page_title, breadcrumb_jsonld=breadcrumb_jsonld,
+        is_intern=bool(intern),
         intern_email=(intern or {}).get("email", ""),
         already_applied=already_applied, my_apps_url="/portal#myapplications",
         tutor_base="https://internship.dbert.online", og_image=OG_IMAGE_URL,
         applied_count=applied_count, related_posts=related_posts, city_posts=city_posts,
+        responsibilities_list=responsibilities_list, skills_list=skills_list,
         breadcrumbs=breadcrumbs, base_path=base_path, post_path=_post_path)
 
 
@@ -9309,19 +9691,20 @@ def post_apply(post_id):
             
             if req_course:
                 has_cert = conn.execute(
-                    "SELECT id FROM intern_certificates WHERE intern_id = ? AND course_id = ? AND tier = 'dbert_verified'",
-                    (intern["id"], req_course["id"])
+                    "SELECT id FROM intern_certificates WHERE (intern_id = ? OR (email IS NOT NULL AND LOWER(email) = LOWER(?))) AND course_id = ? AND tier = 'dbert_verified'",
+                    (intern["id"], intern.get("email") or "", req_course["id"])
                 ).fetchone()
 
                 if not has_cert:
                     app_status = "PENDING_CERTS"
                     missing_cert_course_id = req_course["id"]
 
+        intern_email = (intern.get("email") or "").strip().lower()
         conn.execute(
-            "INSERT INTO post_applications (post_id, intern_id, comment, cv_id, status, created_at) "
-            "VALUES (?,?,?,?, ?, ?) "
-            "ON CONFLICT(post_id, intern_id) DO UPDATE SET comment=excluded.comment, cv_id=excluded.cv_id, status=excluded.status",
-            (post_id, intern["id"], comment, cv_id, app_status, now_str()),
+            "INSERT INTO post_applications (post_id, intern_id, comment, cv_id, status, created_at, email) "
+            "VALUES (?,?,?,?,?,?,?) "
+            "ON CONFLICT(post_id, intern_id) DO UPDATE SET comment=excluded.comment, cv_id=excluded.cv_id, status=excluded.status, email=COALESCE(excluded.email, post_applications.email)",
+            (post_id, intern["id"], comment, cv_id, app_status, now_str(), intern_email),
         )
         conn.commit()
     if is_new:  # T10: confirmation notice -- only on the first apply, not on a comment-edit re-submit
@@ -9426,8 +9809,8 @@ def company_applicants(post_id):
         for r in apps:
             ad = row_to_dict(r)
             earned = conn.execute(
-                "SELECT course_id, course_title FROM intern_certificates WHERE intern_id=?",
-                (ad["intern_id"],),
+                "SELECT course_id, course_title FROM intern_certificates WHERE intern_id=? OR (email IS NOT NULL AND LOWER(email)=LOWER(?))",
+                (ad["intern_id"], ad.get("intern_email") or ""),
             ).fetchall()
             earned_ids = {e["course_id"] for e in earned}
             ad["earned_certs"] = [
@@ -9462,7 +9845,7 @@ def company_app_status(app_id):
     is_cert_gate = new_status == APP_STATUS_PENDING_CERTS
     needed_certs = []
     note = clean_text(data.get("note")) if is_cert_gate else ""
-    notify = None  # (name, email, post_title, company_name, needed_certs, note) â€” sent after commit
+    notify = None  # (name, email, post_title, company_name, needed_certs, note) — sent after commit
     with get_db() as conn:
         row = conn.execute(
             "SELECT pa.id, pa.status AS old_status, pa.intern_id, p.title AS post_title, "
@@ -9475,7 +9858,7 @@ def company_app_status(app_id):
             return jsonify({"status": "error", "message": "Not found"}), 404
         r = row_to_dict(row)
         if is_cert_gate:
-            # Auto-detect missing = (post required âˆ’ intern earned); the company may
+            # Auto-detect missing = (post required − intern earned); the company may
             # override via the request body (editable list of {course_id,title}).
             if isinstance(data.get("needed_certs"), list):
                 needed_certs = _post_required_certs({"certifications_json":
@@ -9490,8 +9873,8 @@ def company_app_status(app_id):
                 certifiable_ids = _certifiable_course_ids()
                 required = [c for c in required if c["course_id"] in certifiable_ids]
                 earned_ids = {e["course_id"] for e in conn.execute(
-                    "SELECT course_id FROM intern_certificates WHERE intern_id=?",
-                    (r["intern_id"],)).fetchall()}
+                    "SELECT course_id FROM intern_certificates WHERE intern_id=? OR (email IS NOT NULL AND LOWER(email)=LOWER(?))",
+                    (r["intern_id"], r.get("intern_email") or "")).fetchall()}
                 needed_certs = [c for c in required if c["course_id"] not in earned_ids]
             # Track 6 / T3: a Pending-Certifications transition with zero certs
             # attached was a silent dead end for the intern -- no action, no
@@ -9933,7 +10316,7 @@ def current_intern():
         return None
     with get_db() as conn:
         row = conn.execute(
-            "SELECT * FROM intern_accounts WHERE email=? AND is_active=1 LIMIT 1", (user["email"],)
+            "SELECT * FROM intern_accounts WHERE LOWER(email)=LOWER(?) AND is_active=1 LIMIT 1", (user["email"],)
         ).fetchone()
     return row_to_dict(row) if row else None
 
@@ -9960,7 +10343,7 @@ def _cv_skills_to_list(text):
 
 
 def _cv_entries(raw):
-    """UAT #28: normalize experience/education JSON â†’ list of
+    """UAT #28: normalize experience/education JSON → list of
     {title, org, dates, bullets:[]}. Tolerates legacy list-of-strings
     (each becomes a title-only entry) so old CVs keep rendering."""
     out = []
@@ -9982,7 +10365,7 @@ def _cv_entries(raw):
 def _cv_clean_entries(raw):
     """UAT #28: sanitize POSTed experience/education for storage. Accepts the new
     structured shape (list of {title,org,dates,bullets}) AND legacy free-text
-    (a string or list of strings â†’ each line becomes a title-only entry)."""
+    (a string or list of strings → each line becomes a title-only entry)."""
     if isinstance(raw, str):
         return [{"title": ln, "org": "", "dates": "", "bullets": []}
                 for ln in _cv_lines_to_list(raw)]
@@ -10006,7 +10389,7 @@ def _cv_clean_entries(raw):
 
 
 def _cv_render_ctx(cv, intern_row, certs):
-    """Shared context for the public CV page + its PDF (parsed JSON â†’ lists)."""
+    """Shared context for the public CV page + its PDF (parsed JSON → lists)."""
     return {
         "cv": cv,
         "intern": row_to_dict(intern_row) if intern_row else {},
@@ -10023,7 +10406,7 @@ def _cv_render_ctx(cv, intern_row, certs):
 
 def _load_public_cv(slug):
     """Fetch (cv, intern_row, certs) for a slug, enforcing is_public. Returns
-    None if missing or private-to-someone-else (caller â†’ 404)."""
+    None if missing or private-to-someone-else (caller → 404)."""
     with get_db() as conn:
         cv_row = conn.execute("SELECT * FROM cvs WHERE slug=?", (slug,)).fetchone()
         if not cv_row:
@@ -10035,8 +10418,8 @@ def _load_public_cv(slug):
         ).fetchone()
         certs = [row_to_dict(r) for r in conn.execute(
             "SELECT course_title, cert_id, issued_at, url FROM intern_certificates "
-            "WHERE intern_id=? ORDER BY issued_at DESC, id DESC",
-            (cv["intern_id"],),
+            "WHERE intern_id=? OR (email IS NOT NULL AND LOWER(email)=LOWER(?)) ORDER BY issued_at DESC, id DESC",
+            (cv["intern_id"], intern_row["email"] if intern_row else ""),
         ).fetchall()]
     if not cv["is_public"]:
         viewer = current_intern()
@@ -10263,6 +10646,7 @@ def intern_me():
             # of whether any rows match). Fixed by joining companies properly, same as
             # /intern/my-applications already does correctly.
             job_apps = []
+            acct_email = (acct["email"] or "").strip().lower() if acct else ""
             if acct:
                 job_apps = conn.execute(
                     "SELECT pa.id, pa.post_id, pa.status, pa.created_at, pa.decision_note, "
@@ -10273,15 +10657,15 @@ def intern_me():
                     "JOIN companies co ON co.id = p.company_id "
                     "LEFT JOIN post_hire_deposits d ON d.post_application_id = pa.id "
                     "AND d.id = (SELECT MAX(id) FROM post_hire_deposits WHERE post_application_id = pa.id) "
-                    "WHERE pa.intern_id = ? ORDER BY pa.id DESC",
-                    (acct["id"],),
+                    "WHERE (pa.intern_id = ? OR (pa.email IS NOT NULL AND LOWER(pa.email) = LOWER(?))) ORDER BY pa.id DESC",
+                    (acct["id"], acct_email),
                 ).fetchall()
             # Attendance summary for current week (Sun-Sat)
             week_start, week_end = get_week_bounds()
             ws = week_start.strftime("%Y-%m-%d")
             att_row = conn.execute(
-                "SELECT total_minutes FROM attendance WHERE intern_id=? AND week_start=?",
-                (acct["id"], ws)
+                "SELECT total_minutes FROM attendance WHERE (intern_id=? OR (email IS NOT NULL AND LOWER(email)=LOWER(?))) AND week_start=?",
+                (acct["id"], acct_email, ws)
             ).fetchone() if acct else None
             att_mins = att_row["total_minutes"] if att_row else 0
             attendance_summary = {
@@ -10295,16 +10679,16 @@ def intern_me():
 
             # Approved micro-tasks count
             approved_tasks = conn.execute(
-                "SELECT COUNT(*) as count FROM task_submissions WHERE intern_id=? AND status='approved'",
-                (acct["id"],)
+                "SELECT COUNT(*) as count FROM task_submissions WHERE (intern_id=? OR (email IS NOT NULL AND LOWER(email)=LOWER(?))) AND status='approved'",
+                (acct["id"], acct_email)
             ).fetchone()["count"] if acct else 0
 
-            # Coins balance â€” the portal header shows SPENDABLE coins, so this is
+            # Coins balance — the portal header shows SPENDABLE coins, so this is
             # the task ledger only. Reading the newest balance_after was doubly
             # wrong: it is a running total across every ledger_kind, and once
             # referral coins exist it would advertise withdrawable cash as
             # spendable credit.
-            total_coins = get_task_balance(conn, acct["id"]) if acct else 0
+            total_coins = get_task_balance(conn, acct["id"], email=acct_email) if acct else 0
 
             # Course enrollments summary with local progress calculation
             enriched_enrs = []
@@ -10313,11 +10697,11 @@ def intern_me():
                 # Auto-enroll accepted intern on-the-fly if missing course enrollment
                 flow_st = get_intern_flow_state(conn, acct["email"])
                 if flow_st["is_accepted"] and flow_st["domain"]:
-                    auto_enroll_intern_in_domain_courses(conn, acct["id"], flow_st["domain"])
+                    auto_enroll_intern_in_domain_courses(conn, acct["id"], flow_st["domain"], email=acct_email)
 
                 raw_enrs = conn.execute(
-                    "SELECT ce.*, c.title, c.slug, c.level, c.domain FROM course_enrollments ce JOIN courses c ON c.id=ce.course_id WHERE ce.intern_id=? ORDER BY ce.id DESC",
-                    (acct["id"],)
+                    "SELECT ce.*, c.title, c.slug, c.level, c.domain FROM course_enrollments ce JOIN courses c ON c.id=ce.course_id WHERE (ce.intern_id=? OR (ce.email IS NOT NULL AND LOWER(ce.email)=LOWER(?))) ORDER BY ce.id DESC",
+                    (acct["id"], acct_email)
                 ).fetchall()
                 for ce in raw_enrs:
                     d = row_to_dict(ce)
@@ -11100,6 +11484,7 @@ def intern_my_applications():
         intern = current_intern()
         if not intern:
             return jsonify({"status": "error", "message": "Unauthorized"}), 401
+        intern_email = (intern.get("email") or "").strip().lower()
         with get_db() as conn:
             rows = conn.execute(
                 "SELECT pa.id, pa.status, pa.comment, pa.created_at, pa.decision_note, "
@@ -11107,8 +11492,8 @@ def intern_my_applications():
                 "p.post_type, p.slug, co.id AS company_id, co.name AS company_name "
                 "FROM post_applications pa JOIN posts p ON p.id = pa.post_id "
                 "JOIN companies co ON co.id = p.company_id "
-                "WHERE pa.intern_id=? ORDER BY pa.id DESC",
-                (intern["id"],),
+                "WHERE (pa.intern_id=? OR (pa.email IS NOT NULL AND LOWER(pa.email)=LOWER(?))) ORDER BY pa.id DESC",
+                (intern["id"], intern_email),
             ).fetchall()
             out = []
             for r in rows:
@@ -12009,19 +12394,20 @@ def intern_tutor_progress():
             return jsonify({"status": "error", "message": "Unauthorized"}), 401
         with get_db() as conn:
             acct = conn.execute(
-                "SELECT * FROM intern_accounts WHERE email=? AND is_active=1",
+                "SELECT * FROM intern_accounts WHERE LOWER(email)=LOWER(?) AND is_active=1",
                 (user["email"],)
             ).fetchone()
             if not acct:
                 return jsonify({"status": "error", "message": "Account not found"}), 404
 
+            acct_email = (acct["email"] or "").strip().lower()
             flow_st = get_intern_flow_state(conn, user["email"])
             if flow_st["is_accepted"] and flow_st["domain"]:
-                auto_enroll_intern_in_domain_courses(conn, acct["id"], flow_st["domain"])
+                auto_enroll_intern_in_domain_courses(conn, acct["id"], flow_st["domain"], email=acct_email)
 
             enroll_query = ("SELECT ce.*, c.title, c.slug, c.domain FROM course_enrollments ce "
-                            "JOIN courses c ON c.id = ce.course_id WHERE ce.intern_id = ? ")
-            params = [acct["id"]]
+                            "JOIN courses c ON c.id = ce.course_id WHERE (ce.intern_id = ? OR (ce.email IS NOT NULL AND LOWER(ce.email) = LOWER(?))) ")
+            params = [acct["id"], acct_email]
             if flow_st["domain"]:
                 enroll_query += "AND c.domain = ? "
                 params.append(flow_st["domain"])
@@ -12543,10 +12929,10 @@ def admin_enrollments():
                        COALESCE(
                            (SELECT ROUND(((ce.current_day - 1) * 100.0) / NULLIF(
                                (SELECT MAX(day_number) FROM course_day_quizzes WHERE course_id = ce.course_id), 0
-                           ), 1) FROM course_enrollments ce WHERE ce.intern_id = ia.id LIMIT 1),
+                           ), 1) FROM course_enrollments ce WHERE (ce.intern_id = ia.id OR (ce.email IS NOT NULL AND LOWER(ce.email) = LOWER(e.email))) LIMIT 1),
                        0) AS tutor_completion_pct
                 FROM enrollments e
-                LEFT JOIN intern_accounts ia ON ia.email = e.email AND ia.is_active = 1
+                LEFT JOIN intern_accounts ia ON LOWER(ia.email) = LOWER(e.email) AND ia.is_active = 1
             """
             if sf == "pending":
                 rows = conn.execute(
@@ -13766,6 +14152,16 @@ def admin_csv_upload_legacy():
         return jsonify({"status": "error", "message": "Error"}), 500
 
 
+def sanitize_csv_value(val):
+    """Sanitize CSV cell against formula injection (CWE-1236)."""
+    if val is None:
+        return ""
+    val_str = str(val)
+    if val_str and val_str[0] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + val_str
+    return val_str
+
+
 @app.route("/admin/csv/applications")
 def admin_csv_applications():
     try:
@@ -13863,27 +14259,50 @@ def admin_csv_incomplete_signups():
 @app.route("/admin/csv/attendance")
 def admin_csv_attendance():
     try:
-        if not is_admin_request(): return "Unauthorized", 401
+        if not is_admin_request():
+            return "Unauthorized", 401
         with get_db() as conn:
             rows = conn.execute("""
-                SELECT a.id, a.intern_id, ia.name, ia.email, ia.domain,
+                SELECT a.id, a.intern_id,
+                       COALESCE(ia.name, enr.name, app.name, 'Intern') AS name,
+                       COALESCE(ia.email, a.email, enr.email, app.email, '') AS email,
+                       COALESCE(ia.domain, enr.domain, app.domain, 'General') AS domain,
                        a.week_start, a.week_end, a.total_minutes, a.updated_at
-                FROM attendance a LEFT JOIN intern_accounts ia ON ia.id = a.intern_id
-                ORDER BY a.week_start DESC, ia.email
+                FROM attendance a
+                LEFT JOIN intern_accounts ia ON (ia.id = a.intern_id OR (a.email IS NOT NULL AND LOWER(ia.email) = LOWER(a.email)))
+                LEFT JOIN enrollments enr ON (a.email IS NOT NULL AND LOWER(enr.email) = LOWER(a.email))
+                LEFT JOIN applications app ON (a.email IS NOT NULL AND LOWER(app.email) = LOWER(a.email))
+                ORDER BY a.week_start DESC, COALESCE(ia.email, a.email)
             """).fetchall()
         out = io.StringIO()
-        w   = csv.writer(out)
-        w.writerow([sanitize_csv_value(x) for x in ["ID","Intern ID","Name","Email","Domain","Week Start","Week End",
-                    "Total Minutes","Hours","Updated At"]])
+        w = csv.writer(out)
+        w.writerow([sanitize_csv_value(x) for x in [
+            "ID", "Intern ID", "Name", "Email", "Domain", "Week Start", "Week End",
+            "Total Minutes", "Hours", "Updated At"
+        ]])
         for r in rows:
-            w.writerow([r["id"],r["intern_id"],r["name"] or "",r["email"] or "",r["domain"] or "",
-                        r["week_start"] or "",r["week_end"] or "",r["total_minutes"],
-                        round((r["total_minutes"] or 0)/60,2),r["updated_at"] or ""])
+            mins = r["total_minutes"] or 0
+            w.writerow([
+                sanitize_csv_value(r["id"]),
+                sanitize_csv_value(r["intern_id"]),
+                sanitize_csv_value(r["name"] or ""),
+                sanitize_csv_value(r["email"] or ""),
+                sanitize_csv_value(r["domain"] or ""),
+                sanitize_csv_value(r["week_start"] or ""),
+                sanitize_csv_value(r["week_end"] or ""),
+                sanitize_csv_value(mins),
+                sanitize_csv_value(round(mins / 60.0, 2)),
+                sanitize_csv_value(r["updated_at"] or "")
+            ])
         out.seek(0)
-        return Response(out.getvalue(), mimetype="text/csv",
-                        headers={"Content-Disposition": "attachment;filename=dbert_attendance.csv"})
+        return Response(
+            out.getvalue(),
+            mimetype="text/csv",
+            headers={"Content-Disposition": "attachment;filename=dbert_attendance.csv"}
+        )
     except Exception as e:
-        log_error("csv-attendance", e); return "Error", 500
+        log_error("csv-attendance", e)
+        return "Error", 500
 
 
 @app.route("/admin/csv/devices")

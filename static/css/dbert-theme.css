@@ -805,6 +805,24 @@ body.public{display:flex; flex-direction:column; min-height:100vh}
 .pager a{font-weight:700; font-size:13px; color:var(--tx-head)}
 .pager span{color:var(--tx-muted); font-size:13px}
 
+/* ---- Public Post Detail Sheet ---- */
+.public-wrap .sheet{
+  max-width:920px; margin:20px auto 48px; background:#FFFFFF;
+  border:1px solid #E2E8F0; border-radius:20px; overflow:hidden;
+  box-shadow:0 10px 32px rgba(15,23,42,0.05); padding:44px 48px; box-sizing:border-box;
+}
+.public-wrap .sheet h1{font-size:28px; font-weight:800; color:#0F172A; line-height:1.3; margin:0 0 10px}
+.public-wrap .sheet h2{
+  font-size:18px; font-weight:800; color:#0F172A; margin:32px 0 14px;
+  display:flex; align-items:center; gap:10px; border-bottom:1px solid #F1F5F9;
+  padding-bottom:8px; text-transform:none; letter-spacing:normal;
+}
+.public-wrap .sheet .body p{font-size:15px; color:#334155; line-height:1.8; margin:0 0 16px}
+@media(max-width:768px){
+  .public-wrap .sheet{padding:24px 20px; border-radius:14px; margin:14px auto 32px}
+  .public-wrap .sheet h1{font-size:22px}
+}
+
 /* ---- Long-form document pages (privacy, terms) ---- */
 .doc-wrap{max-width:860px; margin:0 auto; padding:36px 20px 80px}
 .callout{background:var(--gold-glow); border:1px solid rgba(226,185,111,.25);
