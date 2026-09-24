@@ -3243,7 +3243,7 @@ CSRF_SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
 # Endpoints that legitimately cannot carry a token. Keep this list empty unless
 # there is a genuine server-to-server caller â€” every browser-originated POST
 # must be protected.
-CSRF_EXEMPT_ENDPOINTS = set()
+CSRF_EXEMPT_ENDPOINTS = {"attendance_ping"}
 
 
 def _csrf_token():
@@ -3271,7 +3271,7 @@ def _inject_csrf():
 def _enforce_csrf():
     if request.method in CSRF_SAFE_METHODS:
         return None
-    if request.endpoint in CSRF_EXEMPT_ENDPOINTS:
+    if request.path == "/attendance/ping" or request.endpoint in CSRF_EXEMPT_ENDPOINTS:
         return None
 
     # P0-7: Server-to-server CSRF exemption with strong auth
@@ -11865,7 +11865,7 @@ def attendance_ping():
 
         with get_db() as conn:
             acct = conn.execute(
-                "SELECT id FROM intern_accounts WHERE email=? AND is_active=1", (user["email"],)
+                "SELECT id FROM intern_accounts WHERE LOWER(email)=LOWER(?) AND is_active=1", (user["email"],)
             ).fetchone()
             if not acct:
                 return jsonify({"status": "error", "message": "Account not found"}), 404
@@ -11874,7 +11874,7 @@ def attendance_ping():
 
             # Joining date guard â€” no attendance credits before joining date at 18:00
             enr = conn.execute(
-                "SELECT joining_date FROM enrollments WHERE email=? ORDER BY id DESC LIMIT 1",
+                "SELECT joining_date FROM enrollments WHERE LOWER(email)=LOWER(?) ORDER BY id DESC LIMIT 1",
                 (user["email"],)
             ).fetchone()
             if enr and not joining_unlocked(enr["joining_date"]):
@@ -11901,12 +11901,12 @@ def attendance_ping():
             ).fetchone()
 
             if existing:
-                # Multi-tab throttle guard: if updated less than 120s ago, skip increment to prevent inflation
+                # Multi-tab throttle guard: if updated less than 110s ago, skip increment to prevent inflation
                 skip_increment = False
                 if existing["updated_at"]:
                     try:
                         last_up = datetime.strptime(existing["updated_at"], "%Y-%m-%d %H:%M:%S")
-                        if (datetime.now() - last_up).total_seconds() < 120:
+                        if (datetime.now() - last_up).total_seconds() < 110:
                             skip_increment = True
                     except Exception:
                         pass

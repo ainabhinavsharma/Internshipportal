@@ -2247,8 +2247,6 @@
     const lDot=document.getElementById('learnLockDot'); if(lDot) lDot.classList.toggle('hidden',_isUnlocked);
     if(_isUnlocked){onUnlock();renderTutorCard();}else{startCountdown();}
     loadAttendance();
-    const isEnded = _internshipEndDate && (new Date() > _internshipEndDate);
-    if(_isUnlocked && !_pingInterval && !isEnded){_pingInterval=setInterval(pingAttendance,3*60*1000);}
   }
   async function loadAttendance(){
     try{
@@ -2264,6 +2262,7 @@
       }
     }catch(e){console.error("loadAttendance err:", e);}
   }
+  window.loadAttendance = loadAttendance;
   function startCountdown(){
     if(_countdownInterval)clearInterval(_countdownInterval);
     _countdownInterval=setInterval(()=>{
@@ -2282,8 +2281,6 @@
     const tU=document.getElementById('tutorUnlocked'); if(tU) tU.classList.remove('hidden');
     const llC=document.getElementById('learnLockedCard'); if(llC) llC.classList.add('hidden');
     const luW=document.getElementById('learnUnlockedWrap'); if(luW) luW.classList.remove('hidden');
-    const isEnded = _internshipEndDate && (new Date() > _internshipEndDate);
-    if(!_pingInterval && !isEnded){_pingInterval=setInterval(pingAttendance,3*60*1000);}
   }
   function renderTutorCard(){const pct=Math.round((_intern&&(_intern.learning_completion_pct||_intern.tutor_completion_pct))||0);const p=document.getElementById('tutorPct');if(p)p.textContent=pct+'%';const b=document.getElementById('tutorProgressBar');if(b)b.style.width=pct+'%';}
   function updateLiveCounter(mins){
